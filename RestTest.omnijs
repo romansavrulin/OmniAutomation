@@ -11,8 +11,8 @@
     "image": "key.fill"
 }*/
 (() => {
-    var serviceTitle = "conference-data";
-    var serviceURLString = "https://omni-automation.com/secure/conference-sessions.json"
+    var serviceTitle = "st-auth-token";
+    var serviceURLString = "https://st-api.yandex-team.ru/v2/myself"
     var credentials = new Credentials()
 
     const requestCredentials = async () => {
@@ -22,68 +22,42 @@
             // CREATE FORM FOR GATHERING USER INPUT
             inputForm = new Form()
         
-            // CREATE TEXT AND PASSWORD FIELDS      
-            nameField = new Form.Field.String(
-                "accountName",
-                "Name",
-                "otto-automator"
-            )
-            if(OSname !== "macOS"){
-                nameField.autocapitalizationType = TextAutocapitalizationType.None
-            }
-        
-            passwordFieldA = new Form.Field.Password(
-                "accountPassword",
-                "Password",
-                "omni-automation"
-            )
-            if(OSname !== "macOS"){
-                passwordFieldA.autocapitalizationType = TextAutocapitalizationType.None
-            }
-        
-            passwordFieldB = new Form.Field.Password(
-                "accountPasswordCheck",
-                "Re-Enter",
+            // CREATE Token input field
+            tokenField = new Form.Field.Password(
+                "authТoken",
+                "Auth token",
                 null
             )
             if(OSname !== "macOS"){
-                passwordFieldB.autocapitalizationType = TextAutocapitalizationType.None
+                tokenField.autocapitalizationType = TextAutocapitalizationType.None
             }
 
             // ADD THE FIELDS TO THE FORM
-            inputForm.addField(nameField)
-            inputForm.addField(passwordFieldA)
-            inputForm.addField(passwordFieldB)
-        
+            inputForm.addField(tokenField)
+                    
             // VALIDATE THE USER INPUT
             inputForm.validate = formObject => {
-                accountName = formObject.values["accountName"]
-                nameStatus = (accountName && accountName.length > 0) ? true:false
-                accountPassword = formObject.values["accountPassword"]
-                passwordStatus = (accountPassword && accountPassword.length > 0) ? true:false
-                accountPasswordCheck = formObject.values["accountPasswordCheck"]
-                passwordCheckStatus = (accountPasswordCheck && accountPasswordCheck.length > 0) ? true:false
-                if(passwordStatus && passwordCheckStatus && accountPassword != accountPasswordCheck){
-                    throw "Passwords do not match"
-                }
-                validation = (nameStatus && passwordStatus && passwordCheckStatus) ? true:false
+                authТoken = formObject.values["authТoken"]
+                tokenStatus = (authТoken && authТoken.length > 0) ? true:false
+                
+                validation = (tokenStatus) ? true:false
                 return validation
             }
     
             // PRESENT THE FORM TO THE USER
-            formPrompt = "Enter account name (otto-automator) and password (omni-automation):"
+            formPrompt = "Enter Auth token for ST:"
             formObject = await inputForm.show(formPrompt, "Continue")
         
             // RETRIEVE FORM VALUES
-            accountName = formObject.values["accountName"]
-            accountPassword = formObject.values["accountPassword"]
+            authТoken = formObject.values["authТoken"]
+            
             // STORE THE VALUES
-            credentials.write(serviceTitle, accountName, accountPassword)
+            credentials.write(serviceTitle, "st-user", authТoken)
             // RETRIEVE CREDENTIALS OBJECT
             credentialsObj = credentials.read(serviceTitle)
             //--> {"user":"otto-automator","password":"omni-automation"}
             // PASS CREDENTIALS TO PROCESSING FUNCTION
-            fetchData(credentialsObj)
+            return credentialsObj
         }
         catch(err){
             if(!err.causedByUserCancelling){
@@ -96,15 +70,13 @@
         try {
             // CONSTRUCT ENCODED CREDENTIALS STRING
             accountName = credentialsObj["user"]
-            accountPassword = credentialsObj["password"]
-            data = Data.fromString(accountName + ":" + accountPassword)
-            encodedCredentials = data.toBase64()
+            accountToken = credentialsObj["password"]
         
             // CONSTRUCT REQUEST
             request = URL.FetchRequest.fromString(serviceURLString)
             request.method = 'GET'
             request.cache = "no-cache"
-            request.headers = {"Authorization": "Basic" + " " + encodedCredentials}
+            request.headers = {"Authorization": "OAuth" + " " + accountToken}
     
             // EXECUTE REQUEST
             response = await request.fetch()
@@ -137,35 +109,45 @@
         try {
             console.clear()
             // TO REMOVE CREDENTIALS HOLD DOWN CONTROL KEY WHEN SELECTING PLUG-IN
+            credentialsObj = credentials.read(serviceTitle)
+
+
+            // Do something with 
             if (app.controlKeyDown){
-                credentialsObj = credentials.read(serviceTitle)
                 if(!credentialsObj){
-                    throw {
-                        name: "Missing Credentials",
-                        message: "There are no stored credentials to remove."
-                    }
+                    alertMessage = "No auth token were stored for this plugin yet"
+                    alert = new Alert("Empty credentials", alertMessage)
+                    alert.show()
                 } else {
-                    alertMessage = "Remove the stored credentials?"
-                    alert = new Alert("Confirmation Required", alertMessage)
-                    alert.addOption("Reset")
-                    alert.addOption("Cancel")
-                    alert.show(buttonIndex => {
-                        if (buttonIndex === 0){
-                            console.log(`Removing Service “${serviceTitle}”`)
-                            credentials.remove(serviceTitle)
-                            console.log(`Service “${serviceTitle}” Removed`)    
-                        }
-                    })
+                    if (app.optionKeyDown){ //just show token
+                        alertMessage = `Show credentials: “${credentialsObj["password"]}”`
+                        alert = new Alert("Stored credentials are", alertMessage)
+                        alert.show()
+                    } else {
+                        alertMessage = "Remove the stored credentials?"
+                        alert = new Alert("Confirmation Required", alertMessage)
+                        alert.addOption("Reset")
+                        alert.addOption("Cancel")
+                        alert.show(buttonIndex => {
+                            if (buttonIndex === 0){
+                                console.log(`Removing Service “${serviceTitle}”`)
+                                credentials.remove(serviceTitle)
+                                console.log(`Service “${serviceTitle}” Removed`)    
+                            }
+                        })    
+                    }
                 }
             } else {
-                credentialsObj = credentials.read(serviceTitle)
-                console.log("# CREDENTIALS READ")
                 if (credentialsObj){
                     console.log("# FETCHING DATA")
                     fetchData(credentialsObj)
                 } else {
                     console.log("# REQUESTING CREDENTIALS")
-                    requestCredentials()
+                    requestCredentials().then((credentialsObj) => {
+                            console.log(`# GOT CREDENTIALS ${credentialsObj}`)
+                            fetchData(credentialsObj)
+                        }
+                    )
                 }
             }
         }
