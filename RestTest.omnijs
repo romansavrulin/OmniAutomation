@@ -1,0 +1,181 @@
+/*{
+    "type": "action",
+    "targets": ["omnigraffle","omnifocus","omniplan","omnioutliner"],
+    "author": "Roman Savrulin",
+    "identifier": "com.gmail.romansavrulin.startrek-get",
+    "version": "0.1",
+    "description": "This plug-in uses the Credentials class to create and retrieve auth tokens. NOTE: to clear stored credentials, hold down Control modifier key when selecting plug-in from Automation menu.",
+    "label": "Auth Token Example",
+    "shortLabel": "Auth Token Example",
+    "paletteLabel": "Auth Token Example",
+    "image": "key.fill"
+}*/
+(() => {
+    var serviceTitle = "conference-data";
+    var serviceURLString = "https://omni-automation.com/secure/conference-sessions.json"
+    var credentials = new Credentials()
+
+    const requestCredentials = async () => {
+        try {
+            OSname = app.platformName
+        
+            // CREATE FORM FOR GATHERING USER INPUT
+            inputForm = new Form()
+        
+            // CREATE TEXT AND PASSWORD FIELDS      
+            nameField = new Form.Field.String(
+                "accountName",
+                "Name",
+                "otto-automator"
+            )
+            if(OSname !== "macOS"){
+                nameField.autocapitalizationType = TextAutocapitalizationType.None
+            }
+        
+            passwordFieldA = new Form.Field.Password(
+                "accountPassword",
+                "Password",
+                "omni-automation"
+            )
+            if(OSname !== "macOS"){
+                passwordFieldA.autocapitalizationType = TextAutocapitalizationType.None
+            }
+        
+            passwordFieldB = new Form.Field.Password(
+                "accountPasswordCheck",
+                "Re-Enter",
+                null
+            )
+            if(OSname !== "macOS"){
+                passwordFieldB.autocapitalizationType = TextAutocapitalizationType.None
+            }
+
+            // ADD THE FIELDS TO THE FORM
+            inputForm.addField(nameField)
+            inputForm.addField(passwordFieldA)
+            inputForm.addField(passwordFieldB)
+        
+            // VALIDATE THE USER INPUT
+            inputForm.validate = formObject => {
+                accountName = formObject.values["accountName"]
+                nameStatus = (accountName && accountName.length > 0) ? true:false
+                accountPassword = formObject.values["accountPassword"]
+                passwordStatus = (accountPassword && accountPassword.length > 0) ? true:false
+                accountPasswordCheck = formObject.values["accountPasswordCheck"]
+                passwordCheckStatus = (accountPasswordCheck && accountPasswordCheck.length > 0) ? true:false
+                if(passwordStatus && passwordCheckStatus && accountPassword != accountPasswordCheck){
+                    throw "Passwords do not match"
+                }
+                validation = (nameStatus && passwordStatus && passwordCheckStatus) ? true:false
+                return validation
+            }
+    
+            // PRESENT THE FORM TO THE USER
+            formPrompt = "Enter account name (otto-automator) and password (omni-automation):"
+            formObject = await inputForm.show(formPrompt, "Continue")
+        
+            // RETRIEVE FORM VALUES
+            accountName = formObject.values["accountName"]
+            accountPassword = formObject.values["accountPassword"]
+            // STORE THE VALUES
+            credentials.write(serviceTitle, accountName, accountPassword)
+            // RETRIEVE CREDENTIALS OBJECT
+            credentialsObj = credentials.read(serviceTitle)
+            //--> {"user":"otto-automator","password":"omni-automation"}
+            // PASS CREDENTIALS TO PROCESSING FUNCTION
+            fetchData(credentialsObj)
+        }
+        catch(err){
+            if(!err.causedByUserCancelling){
+                new Alert(err.name, err.message).show()
+            }
+        }
+    }
+    
+    const fetchData = async credentialsObj => {
+        try {
+            // CONSTRUCT ENCODED CREDENTIALS STRING
+            accountName = credentialsObj["user"]
+            accountPassword = credentialsObj["password"]
+            data = Data.fromString(accountName + ":" + accountPassword)
+            encodedCredentials = data.toBase64()
+        
+            // CONSTRUCT REQUEST
+            request = URL.FetchRequest.fromString(serviceURLString)
+            request.method = 'GET'
+            request.cache = "no-cache"
+            request.headers = {"Authorization": "Basic" + " " + encodedCredentials}
+    
+            // EXECUTE REQUEST
+            response = await request.fetch()
+
+            // PROCESS REQUEST RESULT
+            responseCode = response.statusCode
+            console.log("# RESPONSE CODE:", responseCode)
+            if (responseCode >= 200 && responseCode < 300){
+                // PROCESS RETRIEVED DATA 
+                console.log(response.bodyString)
+                new Alert("Data Retrieved", "The data has been logged in the console.").show()
+            } else if (responseCode === 401){
+                throw {
+                    name: "Error 401",
+                    message: "Problem authenticating account with server."
+                } 
+            } else {
+                errorObj = new Error()
+                errorObj.name = `Error ${responseCode}`
+                errorObj.message = "There was a problem retrieving the data."
+                throw errorObj
+            }
+        }
+        catch(err){
+            new Alert(err.name, err.message).show()
+        }
+    }
+    
+    const action = new PlugIn.Action(function(selection, sender){
+        try {
+            console.clear()
+            // TO REMOVE CREDENTIALS HOLD DOWN CONTROL KEY WHEN SELECTING PLUG-IN
+            if (app.controlKeyDown){
+                credentialsObj = credentials.read(serviceTitle)
+                if(!credentialsObj){
+                    throw {
+                        name: "Missing Credentials",
+                        message: "There are no stored credentials to remove."
+                    }
+                } else {
+                    alertMessage = "Remove the stored credentials?"
+                    alert = new Alert("Confirmation Required", alertMessage)
+                    alert.addOption("Reset")
+                    alert.addOption("Cancel")
+                    alert.show(buttonIndex => {
+                        if (buttonIndex === 0){
+                            console.log(`Removing Service “${serviceTitle}”`)
+                            credentials.remove(serviceTitle)
+                            console.log(`Service “${serviceTitle}” Removed`)    
+                        }
+                    })
+                }
+            } else {
+                credentialsObj = credentials.read(serviceTitle)
+                console.log("# CREDENTIALS READ")
+                if (credentialsObj){
+                    console.log("# FETCHING DATA")
+                    fetchData(credentialsObj)
+                } else {
+                    console.log("# REQUESTING CREDENTIALS")
+                    requestCredentials()
+                }
+            }
+        }
+        catch(err){console.error(err.name, err.message)}
+    });
+
+    action.validate = function(selection, sender){
+        // validation code
+        return true
+    };
+    
+    return action;
+})();
