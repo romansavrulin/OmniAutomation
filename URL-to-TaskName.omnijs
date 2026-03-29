@@ -13,14 +13,8 @@
 (() => {
     "use strict";
 
-    function firstURL(text) {
-        if (!text) return null;
-        const m = String(text).match(/\bhttps?:\/\/[^\s<>"']+/i);
-        if (!m) return null;
-        let u = m[0];
-        while (/[),.;:\]]$/.test(u)) u = u.slice(0, -1);
-        return u;
-    }
+    const lib = PlugIn.find("com.gmail.romansavrulin.st-api-library").library("st-api-library");
+    const firstURL = lib.firstURL;
 
     function decodeEntities(text) {
         return text
@@ -94,7 +88,10 @@
 
             for (const task of tasks) {
                 // URL lives in note (put there by "URL to Comment"), fall back to task name
-                const url = firstURL(task.note) || firstURL(task.name);
+                const urlFromNote = firstURL(task.note);
+                const urlFromName = firstURL(task.name);
+                const url = urlFromNote || urlFromName;
+
                 if (!url) {
                     failed.push(`"${task.name}" — no URL found in note or name`);
                     continue;
@@ -104,6 +101,13 @@
                     const title = await fetchPageTitle(url);
                     const oldName = task.name;
                     task.name = title;
+
+                    // URL came from the task name — save it to the note so it isn't lost
+                    if (urlFromName && !urlFromNote) {
+                        const existingNote = task.note ? task.note.trim() : "";
+                        task.note = existingNote ? `${url}\n${existingNote}` : url;
+                    }
+
                     updated.push(`"${oldName}" → "${title}"`);
                 } catch (err) {
                     failed.push(`"${task.name}" — ${err.name}: ${err.message}`);

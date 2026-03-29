@@ -13,6 +13,18 @@
         return
     }
 
+    // Returns the first http(s) URL found in text, with trailing punctuation stripped.
+    // Exposed as both firstURL and firstURLFromText for interop across plug-ins.
+    StApi.firstURL = function(text) {
+        if (!text) return null;
+        const m = String(text).match(/\bhttps?:\/\/[^\s<>"']+/i);
+        if (!m) return null;
+        let u = m[0];
+        while (/[),.;:\]]$/.test(u)) u = u.slice(0, -1);
+        return u;
+    }
+    StApi.firstURLFromText = StApi.firstURL;
+
     return StApi;
 })();
 

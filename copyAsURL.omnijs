@@ -13,6 +13,9 @@
 (() => {
 	"use strict";
 
+	const lib = PlugIn.find("com.gmail.romansavrulin.st-api-library").library("st-api-library");
+	const firstURLFromText = lib.firstURLFromText;
+
 	function escapeHTML(s) {
 		return String(s)
 			.replace(/&/g, "&amp;")
@@ -20,20 +23,6 @@
 			.replace(/>/g, "&gt;")
 			.replace(/"/g, "&quot;")
 			.replace(/'/g, "&#39;");
-	}
-
-	function cleanURL(raw) {
-		if (!raw) return null;
-		let u = raw.trim();
-		while (/[),.;:\]]$/.test(u)) u = u.slice(0, -1);
-		return u;
-	}
-
-	function firstURLFromText(text) {
-		if (!text) return null;
-		const re = /\bhttps?:\/\/[^\s<>"']+/i;
-		const m = String(text).match(re);
-		return m ? cleanURL(m[0]) : null;
 	}
 
 	const action = new PlugIn.Action(function (selection, sender) {
