@@ -1,0 +1,134 @@
+/*{
+    "type": "action",
+    "targets": ["omnifocus"],
+    "author": "Roman Savrulin",
+    "identifier": "com.gmail.romansavrulin.url-to-task-name",
+    "version": "0.1",
+    "description": "Fetches the URL found in the task note (or name) and renames the task using the page title, like a messenger link preview.",
+    "label": "URL → Task Name",
+    "shortLabel": "URL → Name",
+    "paletteLabel": "URL → Task Name",
+    "image": "rectangle.and.text.magnifyingglass"
+}*/
+(() => {
+    "use strict";
+
+    function firstURL(text) {
+        if (!text) return null;
+        const m = String(text).match(/\bhttps?:\/\/[^\s<>"']+/i);
+        if (!m) return null;
+        let u = m[0];
+        while (/[),.;:\]]$/.test(u)) u = u.slice(0, -1);
+        return u;
+    }
+
+    function decodeEntities(text) {
+        return text
+            .replace(/&amp;/g, "&")
+            .replace(/&lt;/g, "<")
+            .replace(/&gt;/g, ">")
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;|&apos;/g, "'")
+            .replace(/&nbsp;/g, " ")
+            .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)))
+            .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCharCode(parseInt(h, 16)));
+    }
+
+    function extractTitle(html) {
+        // og:title — cleanest, no site name appended
+        let m = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']*?)["']/i)
+               || html.match(/<meta[^>]+content=["']([^"']*?)["'][^>]+property=["']og:title["']/i);
+        if (m && m[1].trim()) return decodeEntities(m[1].trim());
+
+        // twitter:title — good fallback for sites without og:title
+        m = html.match(/<meta[^>]+name=["']twitter:title["'][^>]+content=["']([^"']*?)["']/i)
+          || html.match(/<meta[^>]+content=["']([^"']*?)["'][^>]+name=["']twitter:title["']/i);
+        if (m && m[1].trim()) return decodeEntities(m[1].trim());
+
+        // <title> — last resort, often contains " | Site Name" suffixes
+        m = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+        if (m && m[1].trim()) return decodeEntities(m[1].trim());
+
+        return null;
+    }
+
+    async function fetchPageTitle(urlString) {
+        const request = URL.FetchRequest.fromString(urlString);
+        request.method = "GET";
+        request.cache = "no-cache";
+        request.headers = {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+            "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9"
+        };
+
+        const response = await request.fetch();
+
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+            throw { name: `HTTP ${response.statusCode}`, message: `Server returned ${response.statusCode} for: ${urlString}` };
+        }
+
+        const mime = response.mimeType || "";
+        if (!mime.includes("html")) {
+            throw { name: "Not HTML", message: `Response MIME type is "${mime}", cannot extract title from: ${urlString}` };
+        }
+
+        const title = extractTitle(response.bodyString || "");
+        if (!title) {
+            throw { name: "No Title Found", message: `Could not find og:title or <title> tag at: ${urlString}` };
+        }
+
+        return title;
+    }
+
+    const action = new PlugIn.Action(async function (selection, sender) {
+        try {
+            const tasks = selection.tasks || [];
+            if (tasks.length === 0) {
+                new Alert("No Tasks Selected", "Select one or more OmniFocus tasks and run again.").show();
+                return;
+            }
+
+            const updated = [];
+            const failed = [];
+
+            for (const task of tasks) {
+                // URL lives in note (put there by "URL to Comment"), fall back to task name
+                const url = firstURL(task.note) || firstURL(task.name);
+                if (!url) {
+                    failed.push(`"${task.name}" — no URL found in note or name`);
+                    continue;
+                }
+
+                try {
+                    const title = await fetchPageTitle(url);
+                    const oldName = task.name;
+                    task.name = title;
+                    updated.push(`"${oldName}" → "${title}"`);
+                } catch (err) {
+                    failed.push(`"${task.name}" — ${err.name}: ${err.message}`);
+                }
+            }
+
+            let body = "";
+            if (updated.length > 0) body += `Renamed ${updated.length} task(s):\n- ${updated.join("\n- ")}`;
+            if (failed.length > 0) body += `${body ? "\n\n" : ""}Failed (${failed.length}):\n- ${failed.join("\n- ")}`;
+
+            new Alert(
+                updated.length > 0 ? "Done" : "Nothing Renamed",
+                body || "No changes were made."
+            ).show();
+
+        } catch (err) {
+            if (!err.causedByUserCancelling) {
+                new Alert(err.name || "Error", err.message || String(err)).show();
+            }
+        }
+    });
+
+    action.validate = function (selection, sender) {
+        return selection.tasks && selection.tasks.length > 0;
+    };
+
+    return action;
+})();
