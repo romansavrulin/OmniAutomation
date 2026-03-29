@@ -111,6 +111,10 @@
             // TO REMOVE CREDENTIALS HOLD DOWN CONTROL KEY WHEN SELECTING PLUG-IN
             credentialsObj = credentials.read(serviceTitle)
 
+            var StApiLib = PlugIn.find("com.gmail.romansavrulin.st-api-library")
+            var lib = StApiLib.library("st-api-library")
+
+            lib.test()
 
             // Do something with 
             if (app.controlKeyDown){

@@ -1,0 +1,102 @@
+/*{
+    "type": "action",
+    "targets": ["omnigraffle","omnifocus","omniplan","omnioutliner"],
+    "author": "Roman Savrulin",
+    "identifier": "com.gmail.romansavrulin.copy-as-url",
+    "version": "0.1",
+    "description": "This plug-in copies a task as formatted URL.",
+    "label": "Copy As URL",
+    "shortLabel": "Copy As URL",
+    "paletteLabel": "Copy As URL",
+    "image": "key.fill"
+}*/
+(() => {
+	"use strict";
+
+	function escapeHTML(s) {
+		return String(s)
+			.replace(/&/g, "&amp;")
+			.replace(/</g, "&lt;")
+			.replace(/>/g, "&gt;")
+			.replace(/"/g, "&quot;")
+			.replace(/'/g, "&#39;");
+	}
+
+	function cleanURL(raw) {
+		if (!raw) return null;
+		let u = raw.trim();
+		while (/[),.;:\]]$/.test(u)) u = u.slice(0, -1);
+		return u;
+	}
+
+	function firstURLFromText(text) {
+		if (!text) return null;
+		const re = /\bhttps?:\/\/[^\s<>"']+/i;
+		const m = String(text).match(re);
+		return m ? cleanURL(m[0]) : null;
+	}
+
+	const action = new PlugIn.Action(function (selection, sender) {
+		// Works in OmniFocus when tasks are selected. In other apps, selection.tasks may not exist.
+		const tasks = selection.tasks || [];
+
+		if (tasks.length === 0) {
+			new Alert("No tasks selected", "Select one or more OmniFocus tasks and run again.").show();
+			return;
+		}
+
+		let items = [];
+		let skipped = [];
+
+		tasks.forEach(task => {
+			const name = task.name || "Untitled";
+			const note = task.note || "";
+			const url = firstURLFromText(note);
+
+			if (!url) {
+				skipped.push(name);
+				return;
+			}
+			items.push({ name, url });
+		});
+
+		if (items.length === 0) {
+			new Alert("No URLs found", "None of the selected tasks had an http(s) URL in the Note field.").show();
+			return;
+		}
+
+		// Rich HTML (WYSIWYG paste)
+		const htmlList = items.map(it =>
+			`<li><a href="${escapeHTML(it.url)}">${escapeHTML(it.name)}</a></li>`
+		).join("");
+
+		const html =
+			`<html><head><meta charset="utf-8"></head><body><ul>${htmlList}</ul></body></html>`;
+
+		// Plain text fallback
+		const plain = items.map(it => `${it.name}\n${it.url}`).join("\n\n");
+
+		// Put both representations on the clipboard as one pasteboard item
+		const pb = Pasteboard.general;
+		pb.clear();
+
+		const pbItem = new Pasteboard.Item();
+		pbItem.setStringForType(html, new TypeIdentifier("public.html"));
+		pbItem.setStringForType(plain, new TypeIdentifier("public.utf8-plain-text"));
+
+		pb.addItems([pbItem]);
+
+		if (skipped.length > 0) {
+			new Alert(
+				"Copied links (some skipped)",
+				`Copied ${items.length} link(s).\n\nSkipped (no URL found in Note):\n- ` + skipped.join("\n- ")
+			).show();
+		}
+	});
+
+	action.validate = function (selection, sender) {
+		return selection.tasks && selection.tasks.length > 0;
+	};
+
+	return action;
+})();

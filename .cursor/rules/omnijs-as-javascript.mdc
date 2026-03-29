@@ -1,0 +1,86 @@
+---
+description: OmniAutomation plug-in conventions and API guidance for .omnijs files
+globs: **/*.omnijs
+alwaysApply: false
+---
+
+# .omnijs Files Are OmniAutomation Plug-ins (JavaScript)
+
+Files with the `.omnijs` extension are OmniAutomation plug-in scripts. Always treat them as JavaScript and apply OmniAutomation-specific conventions below.
+
+## Always Consult the Docs
+
+OmniAutomation has its own API, syntax, and global objects. Before writing or editing code, refer to the official reference:
+- Full API: https://omni-automation.com
+- OmniFocus-specific: https://omni-automation.com/omnifocus/
+- `URL.FetchRequest`: https://omni-automation.com/url/fetch-request.html
+- `Credentials`: https://omni-automation.com/shared/credentials.html
+- `Form` / `Form.Field`: https://omni-automation.com/shared/form.html
+- `PlugIn` / libraries: https://omni-automation.com/shared/plugin.html
+
+## Plug-in File Structure
+
+Every plug-in starts with a JSON descriptor in a block comment, followed by an IIFE that returns an `action`:
+
+```js
+/*{
+    "type": "action",
+    "targets": ["omnifocus"],
+    "identifier": "com.example.my-plugin",
+    "version": "1.0",
+    "label": "My Action"
+}*/
+(() => {
+    const action = new PlugIn.Action(function(selection, sender) { ... });
+    action.validate = function(selection, sender) { return true; };
+    return action;
+})();
+```
+
+## Key Global APIs (do NOT polyfill or import — they are injected by the runtime)
+
+| API | Purpose |
+|-----|---------|
+| `PlugIn.Action` | Define the action handler |
+| `PlugIn.find(id)` / `.library(name)` | Load a shared library plug-in |
+| `URL.FetchRequest.fromString(url)` | Create an HTTP request (NOT `fetch`) |
+| `request.fetch()` | Execute the request (returns a Promise) |
+| `response.statusCode` / `response.bodyString` | Parse the response |
+| `Credentials` | Securely store/retrieve tokens (keychain-backed) |
+| `credentials.write(service, user, password)` | Store a credential |
+| `credentials.read(service)` | Returns `{user, password}` or `null` |
+| `credentials.remove(service)` | Delete stored credential |
+| `Form` / `Form.Field.Password` / `Form.Field.String` | Build input dialogs |
+| `Alert` | Show alerts and confirmations |
+| `app.platformName` | `"macOS"` or `"iOS"` |
+| `app.controlKeyDown` / `app.optionKeyDown` | Modifier key state |
+| `TextAutocapitalizationType` | Autocap control for iOS form fields |
+
+## Network Requests
+
+Use `URL.FetchRequest` — never `fetch`, `XMLHttpRequest`, or `axios`:
+
+```js
+const request = URL.FetchRequest.fromString("https://example.com/api")
+request.method = "GET"
+request.cache = "no-cache"
+request.headers = { "Authorization": "Bearer " + token }
+const response = await request.fetch()
+// response.statusCode, response.bodyString
+```
+
+## Credential Handling
+
+Auth tokens must be stored via `Credentials`, never hardcoded:
+
+```js
+const credentials = new Credentials()
+credentials.write("my-service", "username", token)
+const cred = credentials.read("my-service") // { user, password }
+```
+
+## Security Notes
+
+- Tokens and secrets must always go through `Credentials` (keychain-backed)
+- `URL.FetchRequest` calls send data over the network — review headers carefully
+- `console.log(response.bodyString)` may log sensitive data; avoid in production

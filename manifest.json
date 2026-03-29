@@ -1,0 +1,22 @@
+{
+	"defaultLocale":"en",
+	"identifier": "com.gmail.romansavrulin.st-sync",
+	"author": "Roman Savrulin",
+	"description": "A collection of actions (scripts) for StarTrek Sync.",
+	"version": "1.0",
+	"actions": [
+		{
+			"identifier": "myFirstAction",
+			"image": "toolbar-icon.png"
+		},
+		{
+			"identifier": "mySecondAction",
+			"image": "toolbar-icon.png"
+		}
+	],
+	"libraries": [
+		{
+			"identifier": "StApiLibrary"
+		}
+	]
+}

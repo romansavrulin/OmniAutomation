@@ -1,0 +1,22 @@
+/*{
+    "author": "Roman Savrulin",
+    "targets": ["omnifocus","omnigraffle","omnioutliner"],
+    "type": "library",
+    "identifier": "com.gmail.romansavrulin.st-api-library",
+    "version": "0.1"
+}*/
+(() => {
+    var StApi = new PlugIn.Library(new Version("1.0"));
+
+    StApi.test = function(passedParameter){
+        displayErrorMessage("test")
+        return
+    }
+
+    return StApi;
+})();
+
+function displayErrorMessage(errorString){
+    new Alert('ERROR', errorString).show(function(result){})
+    //throw new Error(errorString)
+} 

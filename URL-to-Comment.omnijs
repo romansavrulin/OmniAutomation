@@ -1,0 +1,98 @@
+/*{
+    "type": "action",
+    "targets": ["omnigraffle","omnifocus","omniplan","omnioutliner"],
+    "author": "Roman Savrulin",
+    "identifier": "com.gmail.romansavrulin.url-to-comment",
+    "version": "0.2",
+    "description": "Keeps only the first line of the task name and moves any URL found in it to the note/description.",
+    "label": "URL to comment",
+    "shortLabel": "URL to comment",
+    "paletteLabel": "URL to comment",
+    "image": "key.fill"
+}*/
+(() => {
+    "use strict";
+
+    function cleanURL(raw) {
+        if (!raw) return null;
+        let u = raw.trim();
+        while (/[),.;:\]]$/.test(u)) u = u.slice(0, -1);
+        return u;
+    }
+
+    function firstURLFromText(text) {
+        if (!text) return null;
+        const re = /\bhttps?:\/\/[^\s<>"']+/i;
+        const m = String(text).match(re);
+        return m ? cleanURL(m[0]) : null;
+    }
+
+    const action = new PlugIn.Action(function (selection, sender) {
+        const tasks = selection.tasks || [];
+
+        if (tasks.length === 0) {
+            new Alert("No tasks selected", "Select one or more OmniFocus tasks and run again.").show();
+            return;
+        }
+
+        let processed = [];
+        let skipped = [];
+
+        tasks.forEach(task => {
+            const fullName = task.name || "Untitled";
+
+            // 1. Keep only the first line of the task name
+            const firstLine = fullName.split("\n")[0].trim();
+
+            // 2. Look for a URL anywhere in the full original name
+            const url = firstURLFromText(fullName);
+
+            if (!url) {
+                skipped.push(firstLine);
+                // Still trim the name to first line even if no URL found
+                task.name = firstLine;
+                return;
+            }
+
+            // 3. Remove the URL from the first line to get a clean caption
+            const cleanName = firstLine.replace(url, "").trim()
+                // Clean up any leftover punctuation/spaces around where the URL was
+                .replace(/\s{2,}/g, " ")
+                .replace(/^[,.\s]+|[,.\s]+$/g, "");
+
+            // 4. Prepend URL to existing note (description), separated by a newline
+            const existingNote = task.note ? task.note.trim() : "";
+            const newNote = existingNote ? `${url}\n${existingNote}` : url;
+
+            // 5. Write back
+            task.name = cleanName || firstLine; // fallback to firstLine if cleanName is empty
+            task.note = newNote;
+
+            processed.push(cleanName || firstLine);
+        });
+
+        // Report results
+        if (processed.length === 0 && skipped.length > 0) {
+            new Alert(
+                "No URLs found",
+                "No URLs were found in the selected task names.\n\nTrimmed to first line:\n- " + skipped.join("\n- ")
+            ).show();
+            return;
+        }
+
+        const skippedNote = skipped.length > 0
+            ? `\n\nNo URL found (name still trimmed):\n- ${skipped.join("\n- ")}`
+            : "";
+
+        new Alert(
+            "Done",
+            `Processed ${processed.length} task(s).${skippedNote}`
+        ).show();
+    });
+
+    action.validate = function (selection, sender) {
+        return selection.tasks && selection.tasks.length > 0;
+    };
+
+    return action;
+})();

@@ -1,0 +1,151 @@
+/*{
+    "author": "Roman Savrulin",
+    "targets": ["omnifocus"],
+    "type": "action",
+    "identifier": "com.gmail.romansavrulin.Randomize-Review-Date",
+    "version": "0.1",
+    "description": "A plug-in that Randomizes Review Date for selected projects",
+    "label": "Randomize Review Date",
+    "mediumLabel": "Randomize Review Date",
+    "longLabel": "Randomize Review Date",
+    "paletteLabel": "Randomize Review Date",
+    "image": "key.fill"
+}*/
+(() => {
+    const credentialID = "review-random-window-default";
+    const credentialUser = "omnifocus-user";
+    var credentials = new Credentials();
+    let projects = null;
+    let useReviewInterval = true;
+
+    const action = new PlugIn.Action(function(selection, sender){
+        try {
+
+            function getCredentialDefault() {
+                let cred = credentials.read(credentialID, credentialUser);
+                if (cred) {
+                    return cred.password;
+                } else {
+                    // fallback default
+                    return "7";
+                }
+            }
+
+            function setCredentialDefault(value) {
+                let cred = credentials.write(
+                    credentialID,
+                    credentialUser,
+                    value
+                );
+            }
+
+            function reviewIntervalInDays(interval) {
+                const multipliers = {
+                    'days': 1,
+                    'weeks': 7,
+                    'months': 30,    // Approximate month as 30 days
+                    'years': 365     // Approximate year as 365 days
+                };
+
+                // Guard in case of unexpected units:
+                if (!(interval.unit in multipliers)) {
+                    throw new Error("Unknown unit: " + interval.unit);
+                }
+
+                return interval.steps * multipliers[interval.unit];
+            }
+
+            // Get value from Credentials
+            let previousDefault = getCredentialDefault();
+
+            // Show an input alert for the randomization window string
+            const prompt = new Form.Field.String(
+                "range",
+                "Enter window days from now as: <from>[;<to>]:",
+                previousDefault
+            );
+            const form = new Form();
+            form.addField(prompt);
+
+            let windowFrom = null;
+            let windowTo = null;
+
+            form.validate = formObject => {
+                const value = formObject.values['range'].trim();
+                if (value === "") {
+                    return false;
+                }
+                // Check if input matches expected format (number or number;number)
+                if (/^\d+(;\d+)?$/.test(value)) {
+                    return true;
+                }
+                return false;
+            };
+
+            const doRandomize = (windowFrom, windowTo) => {
+
+                // Get today's date
+                const today = new Date();
+
+                console.info(`projects ${projects}`)
+
+                projects.forEach(project => {
+                    // Pick a random day in [windowFrom, windowTo]
+                    let intervalDays = reviewIntervalInDays(project.reviewInterval);
+                    let randomDays = intervalDays + windowFrom + Math.floor(Math.random() * (windowTo - windowFrom + 1));
+                    
+                    if (useReviewInterval)
+                        randomDays = intervalDays + Math.floor(Math.random() * Math.floor(intervalDays));
+
+                    let deferDate = project.deferDate;
+                    let startDate = today;
+
+                    if (deferDate && (deferDate > today)){
+                        startDate = deferDate;
+                    }
+
+                    let reviewDate = new Date(startDate);
+                    reviewDate.setDate(startDate.getDate() + randomDays);
+
+                    project.nextReviewDate = reviewDate;
+
+                    //new Alert("Done", `Randomized review interval ${intervalDays} days with window (${windowFrom} to ${windowTo} days) -> ${randomDays} from ${startDate}) for project "${project.name}".`).show();
+                });
+            }
+
+            if(useReviewInterval){
+                doRandomize(0, 0);
+                return;
+            }
+
+            form.show("Randomize Review Dates", "Ok").then(formObject => {
+                let value = formObject.values['range'].trim();
+                let parts = value.split(';').map(x => parseInt(x));
+                windowFrom = (parts.length > 0) ? parts[0] : 7;
+                windowTo = (parts.length > 1) ? parts[1] : (windowFrom + 7);
+
+                if (windowTo < windowFrom) {
+                    let tmp = windowTo;
+                    windowTo = windowFrom;
+                    windowFrom = tmp;
+                }
+
+                setCredentialDefault(value);
+                doRandomize(windowFrom, windowTo);
+                
+            });
+        }
+        catch(err){console.error(err.name, err.message)}
+    });
+
+    action.validate = function(selection, sender){
+        // Get selected projects
+        projects = Array.from(selection.projects);
+        if (projects.length === 0) {
+            return false;
+        }
+        return true;
+    };
+    
+    return action;
+})();
