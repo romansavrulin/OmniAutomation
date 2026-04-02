@@ -79,8 +79,51 @@ credentials.write("my-service", "username", token)
 const cred = credentials.read("my-service") // { user, password }
 ```
 
+## Secret Manager Library
+
+A centralized credential manager is available at `com.gmail.romansavrulin.secret-manager-library`. Load it:
+
+```js
+const sm = PlugIn.find("com.gmail.romansavrulin.secret-manager-library").library("secret-manager-library");
+```
+
+### authenticatedFetch — preferred way to make HTTP requests
+
+Use `sm.authenticatedFetch(url, options)` instead of raw `URL.FetchRequest`. It transparently injects auth headers when the URL matches a registered service:
+
+```js
+const response = await sm.authenticatedFetch("https://api.github.com/user", {
+    method: "GET",
+    headers: { "Accept": "application/json" }
+});
+```
+
+- `options`: `{ method, cache, headers, bodyString }` — all optional, defaults to GET / no-cache
+- If the URL origin matches a registered service, auth headers are merged automatically
+- If credentials are missing for a matched service, throws `MissingCredentials`
+- If no service matches, performs a plain unauthenticated fetch
+
+### Registry API
+
+| Method | Description |
+|--------|-------------|
+| `sm.addService(id, label, urlPattern, authType)` | Register a service |
+| `sm.removeService(id)` | Remove service + credentials |
+| `sm.getService(id)` | Get single registry entry |
+| `sm.listServices()` | List all entries with `hasCredential` flag |
+| `sm.setCredential(id, user, password)` | Store secret in keychain |
+| `sm.getCredential(id)` | Read `{user, password}` or null |
+| `sm.findServiceForURL(urlString)` | Match URL to service by origin |
+
+Auth types: `bearer`, `oauth`, `basic`, `cookie`, `custom-header`
+
+### Management UI
+
+Run the "Manage Secrets" action (`ManageSecrets.omnijs`) to list, add, edit, or delete services and their credentials interactively.
+
 ## Security Notes
 
 - Tokens and secrets must always go through `Credentials` (keychain-backed)
+- Use `sm.authenticatedFetch()` for any URL that may need authentication
 - `URL.FetchRequest` calls send data over the network — review headers carefully
 - `console.log(response.bodyString)` may log sensitive data; avoid in production

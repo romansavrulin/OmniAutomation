@@ -14,6 +14,7 @@
     "use strict";
 
     const lib = PlugIn.find("com.gmail.romansavrulin.st-api-library").library("st-api-library");
+    const sm = PlugIn.find("com.gmail.romansavrulin.secret-manager-library").library("secret-manager-library");
     const firstURL = lib.firstURL;
 
     function decodeEntities(text) {
@@ -47,16 +48,13 @@
     }
 
     async function fetchPageTitle(urlString) {
-        const request = URL.FetchRequest.fromString(urlString);
-        request.method = "GET";
-        request.cache = "no-cache";
-        request.headers = {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
-            "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9"
-        };
-
-        const response = await request.fetch();
+        const response = await sm.authenticatedFetch(urlString, {
+            headers: {
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+                "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9"
+            }
+        });
 
         if (response.statusCode < 200 || response.statusCode >= 300) {
             throw { name: `HTTP ${response.statusCode}`, message: `Server returned ${response.statusCode} for: ${urlString}` };

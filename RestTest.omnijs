@@ -3,165 +3,59 @@
     "targets": ["omnigraffle","omnifocus","omniplan","omnioutliner"],
     "author": "Roman Savrulin",
     "identifier": "com.gmail.romansavrulin.startrek-get",
-    "version": "0.1",
-    "description": "This plug-in uses the Credentials class to create and retrieve auth tokens. NOTE: to clear stored credentials, hold down Control modifier key when selecting plug-in from Automation menu.",
-    "label": "Auth Token Example",
-    "shortLabel": "Auth Token Example",
-    "paletteLabel": "Auth Token Example",
+    "version": "0.2",
+    "description": "Fetches data from the StarTrek API using the secret-manager-library for authentication. Hold Control to check credential status for the target URL.",
+    "label": "ST API Test",
+    "shortLabel": "ST API Test",
+    "paletteLabel": "ST API Test",
     "image": "key.fill"
 }*/
 (() => {
-    var serviceTitle = "st-auth-token";
-    var serviceURLString = "https://st-api.yandex-team.ru/v2/myself"
-    var credentials = new Credentials()
+    "use strict";
 
-    const requestCredentials = async () => {
+    const sm = PlugIn.find("com.gmail.romansavrulin.secret-manager-library").library("secret-manager-library");
+    const serviceURLString = "https://st-api.yandex-team.ru/v2/myself";
+
+    const action = new PlugIn.Action(async function (selection, sender) {
         try {
-            OSname = app.platformName
-        
-            // CREATE FORM FOR GATHERING USER INPUT
-            inputForm = new Form()
-        
-            // CREATE Token input field
-            tokenField = new Form.Field.Password(
-                "authТoken",
-                "Auth token",
-                null
-            )
-            if(OSname !== "macOS"){
-                tokenField.autocapitalizationType = TextAutocapitalizationType.None
-            }
-
-            // ADD THE FIELDS TO THE FORM
-            inputForm.addField(tokenField)
-                    
-            // VALIDATE THE USER INPUT
-            inputForm.validate = formObject => {
-                authТoken = formObject.values["authТoken"]
-                tokenStatus = (authТoken && authТoken.length > 0) ? true:false
-                
-                validation = (tokenStatus) ? true:false
-                return validation
-            }
-    
-            // PRESENT THE FORM TO THE USER
-            formPrompt = "Enter Auth token for ST:"
-            formObject = await inputForm.show(formPrompt, "Continue")
-        
-            // RETRIEVE FORM VALUES
-            authТoken = formObject.values["authТoken"]
-            
-            // STORE THE VALUES
-            credentials.write(serviceTitle, "st-user", authТoken)
-            // RETRIEVE CREDENTIALS OBJECT
-            credentialsObj = credentials.read(serviceTitle)
-            //--> {"user":"otto-automator","password":"omni-automation"}
-            // PASS CREDENTIALS TO PROCESSING FUNCTION
-            return credentialsObj
-        }
-        catch(err){
-            if(!err.causedByUserCancelling){
-                new Alert(err.name, err.message).show()
-            }
-        }
-    }
-    
-    const fetchData = async credentialsObj => {
-        try {
-            // CONSTRUCT ENCODED CREDENTIALS STRING
-            accountName = credentialsObj["user"]
-            accountToken = credentialsObj["password"]
-        
-            // CONSTRUCT REQUEST
-            request = URL.FetchRequest.fromString(serviceURLString)
-            request.method = 'GET'
-            request.cache = "no-cache"
-            request.headers = {"Authorization": "OAuth" + " " + accountToken}
-    
-            // EXECUTE REQUEST
-            response = await request.fetch()
-
-            // PROCESS REQUEST RESULT
-            responseCode = response.statusCode
-            console.log("# RESPONSE CODE:", responseCode)
-            if (responseCode >= 200 && responseCode < 300){
-                // PROCESS RETRIEVED DATA 
-                console.log(response.bodyString)
-                new Alert("Data Retrieved", "The data has been logged in the console.").show()
-            } else if (responseCode === 401){
-                throw {
-                    name: "Error 401",
-                    message: "Problem authenticating account with server."
-                } 
-            } else {
-                errorObj = new Error()
-                errorObj.name = `Error ${responseCode}`
-                errorObj.message = "There was a problem retrieving the data."
-                throw errorObj
-            }
-        }
-        catch(err){
-            new Alert(err.name, err.message).show()
-        }
-    }
-    
-    const action = new PlugIn.Action(function(selection, sender){
-        try {
-            console.clear()
-            // TO REMOVE CREDENTIALS HOLD DOWN CONTROL KEY WHEN SELECTING PLUG-IN
-            credentialsObj = credentials.read(serviceTitle)
-
-            var StApiLib = PlugIn.find("com.gmail.romansavrulin.st-api-library")
-            var lib = StApiLib.library("st-api-library")
-
-            lib.test()
-
-            // Do something with 
-            if (app.controlKeyDown){
-                if(!credentialsObj){
-                    alertMessage = "No auth token were stored for this plugin yet"
-                    alert = new Alert("Empty credentials", alertMessage)
-                    alert.show()
+            if (app.controlKeyDown) {
+                const svc = sm.findServiceForURL(serviceURLString);
+                if (!svc) {
+                    new Alert("No Service Registered",
+                        `No service is registered for "${serviceURLString}".\nRun "Manage Secrets" to add one (auth type: oauth).`
+                    ).show();
                 } else {
-                    if (app.optionKeyDown){ //just show token
-                        alertMessage = `Show credentials: “${credentialsObj["password"]}”`
-                        alert = new Alert("Stored credentials are", alertMessage)
-                        alert.show()
-                    } else {
-                        alertMessage = "Remove the stored credentials?"
-                        alert = new Alert("Confirmation Required", alertMessage)
-                        alert.addOption("Reset")
-                        alert.addOption("Cancel")
-                        alert.show(buttonIndex => {
-                            if (buttonIndex === 0){
-                                console.log(`Removing Service “${serviceTitle}”`)
-                                credentials.remove(serviceTitle)
-                                console.log(`Service “${serviceTitle}” Removed`)    
-                            }
-                        })    
-                    }
+                    const cred = sm.getCredential(svc.id);
+                    new Alert("Service: " + svc.label,
+                        `URL pattern: ${svc.urlPattern}\n` +
+                        `Auth type: ${svc.authType}\n` +
+                        `Credentials: ${cred ? "OK" : "MISSING"}`
+                    ).show();
                 }
+                return;
+            }
+
+            const response = await sm.authenticatedFetch(serviceURLString);
+            const code = response.statusCode;
+
+            if (code >= 200 && code < 300) {
+                console.log(response.bodyString);
+                new Alert("Data Retrieved", "The data has been logged in the console.").show();
+            } else if (code === 401) {
+                throw { name: "Error 401", message: "Authentication failed. Re-enter credentials via \"Manage Secrets\"." };
             } else {
-                if (credentialsObj){
-                    console.log("# FETCHING DATA")
-                    fetchData(credentialsObj)
-                } else {
-                    console.log("# REQUESTING CREDENTIALS")
-                    requestCredentials().then((credentialsObj) => {
-                            console.log(`# GOT CREDENTIALS ${credentialsObj}`)
-                            fetchData(credentialsObj)
-                        }
-                    )
-                }
+                throw { name: `Error ${code}`, message: "There was a problem retrieving the data." };
+            }
+        } catch (err) {
+            if (!err.causedByUserCancelling) {
+                new Alert(err.name || "Error", err.message || String(err)).show();
             }
         }
-        catch(err){console.error(err.name, err.message)}
     });
 
-    action.validate = function(selection, sender){
-        // validation code
-        return true
+    action.validate = function (selection, sender) {
+        return true;
     };
-    
+
     return action;
 })();
