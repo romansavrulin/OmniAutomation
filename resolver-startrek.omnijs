@@ -1,0 +1,45 @@
+/*{
+    "author": "Roman Savrulin",
+    "targets": ["omnifocus", "omnigraffle", "omnioutliner", "omniplan"],
+    "type": "library",
+    "identifier": "com.gmail.romansavrulin.resolver-startrek",
+    "version": "0.1"
+}*/
+(() => {
+    "use strict";
+
+    var lib = new PlugIn.Library(new Version("1.0"));
+
+    lib.resolverName = "StartrekTracker";
+    lib.builtin = true;
+    lib.priority = 10;
+
+    lib.matches = function (url) {
+        return /st\.yandex-team\.ru\/[A-Za-z]+-\d+/.test(url);
+    };
+
+    lib.resolve = async function (url, fetchFn) {
+        const m = url.match(/st\.yandex-team\.ru\/([A-Za-z]+-\d+)/);
+        if (!m) return null;
+
+        const issueKey = m[1];
+        const apiUrl = `https://st-api.yandex-team.ru/v3/issues/${issueKey}`;
+
+        const resp = await fetchFn(apiUrl, {
+            headers: { "Accept": "application/json" }
+        });
+
+        if (resp.statusCode < 200 || resp.statusCode >= 300) {
+            return null;
+        }
+
+        const data = JSON.parse(resp.bodyString);
+        const issue = Array.isArray(data) ? data[0] : data;
+        if (!issue) return null;
+
+        const key = issue.key || issueKey;
+        return issue.summary ? `${key}: ${issue.summary}` : null;
+    };
+
+    return lib;
+})();

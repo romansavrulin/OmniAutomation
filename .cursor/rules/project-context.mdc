@@ -14,7 +14,7 @@ OmniFocus OmniAutomation plug-in collection by Roman Savrulin. All `.omnijs` fil
 - `st-api-library.omnijs` — legacy shared utility library (currently empty). ID: `com.gmail.romansavrulin.st-api-library`
 - `secret-manager-library.omnijs` — centralized credential manager. Stores service registry in `Preferences` (JSON) and secrets in `Credentials` (keychain). Exposes `authenticatedFetch(url, options)` which transparently injects auth headers by URL origin match. ID: `com.gmail.romansavrulin.secret-manager-library`
 - `url-resolver-library.omnijs` — extensible URL-to-title resolver chain. Exports `firstURL` / `firstURLFromText` (extract first http(s) URL from text). Auto-discovers resolver plug-ins via `PlugIn.all` using identifier prefix `com.gmail.romansavrulin.resolver-`. Falls back to HTML title parsing. ID: `com.gmail.romansavrulin.url-resolver-library`
-- `resolver-*.omnijs` — individual resolver modules (GitHub, Jira, YouTube, Atushka, etc.). Each is a library exporting `resolverName`, `priority`, `matches(url)`, `resolve(url, fetchFn)`. Auto-discovered by the core resolver library. Note: `PlugIn.Library` has a read-only `name` property, so display names use `resolverName`.
+- `resolver-*.omnijs` — individual resolver modules (GitHub, Jira, YouTube, Atushka, StartrekTracker, etc.). Each is a library exporting `resolverName`, `priority`, `matches(url)`, `resolve(url, fetchFn)`. Auto-discovered by the core resolver library. Note: `PlugIn.Library` has a read-only `name` property, so display names use `resolverName`.
 
 ### Actions (type: action)
 

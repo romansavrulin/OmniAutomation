@@ -147,6 +147,7 @@ Built-in resolver modules:
 - `resolver-jira.omnijs` — Jira issues via REST API
 - `resolver-youtube.omnijs` — YouTube videos via oEmbed
 - `resolver-atushka.omnijs` — Yandex Atushka posts via BFF batch API
+- `resolver-startrek.omnijs` — Yandex StartrekTracker issues via v3 REST API
 
 To add a new resolver, create a file like `resolver-myservice.omnijs`:
 
@@ -213,6 +214,25 @@ URL pattern: `yandex-team.ru/atushka/post/{id}`
 }
 ```
 Title is extracted from `success[postId].content.title`, falling back to `success[postId].structuredContent.title`.
+
+**StartrekTracker** (`st-api.yandex-team.ru/v3/issues/{KEY}`):
+URL pattern: `st.yandex-team.ru/{KEY}` (e.g. `SAMSARAVTEAM-37108`)
+Response may be an object or an array; the resolver handles both.
+```json
+{
+  "self": "https://st-api.yandex-team.ru/v3/issues/TREK-9844",
+  "id": "593cd211ef7e8a33********",
+  "key": "TREK-9844",
+  "summary": "subtask",
+  "description": "...",
+  "type": { "key": "task", "display": "..." },
+  "priority": { "key": "normal", "display": "..." },
+  "status": { "key": "open", "display": "..." },
+  "parent": { "key": "JUNE-2", "display": "Task" },
+  "project": { "primary": { "display": "..." } }
+}
+```
+Title is formatted as `KEY: summary`.
 
 ### Shared HTML Helpers
 
