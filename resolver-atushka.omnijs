@@ -1,0 +1,47 @@
+/*{
+    "author": "Roman Savrulin",
+    "targets": ["omnifocus", "omnigraffle", "omnioutliner", "omniplan"],
+    "type": "library",
+    "identifier": "com.gmail.romansavrulin.resolver-atushka",
+    "version": "0.1"
+}*/
+(() => {
+    "use strict";
+
+    var lib = new PlugIn.Library(new Version("1.0"));
+
+    lib.resolverName = "Atushka";
+    lib.builtin = true;
+    lib.priority = 10;
+
+    lib.matches = function (url) {
+        return /yandex-team\.ru\/atushka\/post\/\d+/.test(url);
+    };
+
+    lib.resolve = async function (url, fetchFn) {
+        const m = url.match(/yandex-team\.ru\/atushka\/post\/(\d+)/);
+        if (!m) return null;
+
+        const postId = m[1];
+        const apiUrl = `https://at.yandex-team.ru/esoc/hub/bff/api/v1/batch/posts/?postIds=${postId}`;
+
+        const resp = await fetchFn(apiUrl, {
+            headers: { "Accept": "application/json" }
+        });
+
+        if (resp.statusCode < 200 || resp.statusCode >= 300) {
+            return null;
+        }
+
+        const data = JSON.parse(resp.bodyString);
+        const post = data.success && data.success[postId];
+        if (!post) return null;
+
+        const title = (post.content && post.content.title)
+            || (post.structuredContent && post.structuredContent.title);
+
+        return title || null;
+    };
+
+    return lib;
+})();

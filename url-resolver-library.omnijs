@@ -3,7 +3,7 @@
     "targets": ["omnifocus", "omnigraffle", "omnioutliner", "omniplan"],
     "type": "library",
     "identifier": "com.gmail.romansavrulin.url-resolver-library",
-    "version": "0.1"
+    "version": "0.2"
 }*/
 (() => {
     "use strict";
@@ -13,10 +13,10 @@
     var lib = new PlugIn.Library(new Version("1.0"));
 
     // -----------------------------------------------------------------------
-    // Shared HTML helpers (used by the HTML fallback resolver)
+    // Shared HTML helpers (exposed for use by resolver modules)
     // -----------------------------------------------------------------------
 
-    function decodeEntities(text) {
+    lib.decodeEntities = function (text) {
         return text
             .replace(/&amp;/g, "&")
             .replace(/&lt;/g, "<")
@@ -26,135 +26,31 @@
             .replace(/&nbsp;/g, " ")
             .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)))
             .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCharCode(parseInt(h, 16)));
-    }
+    };
 
-    function extractTitle(html) {
+    lib.extractTitle = function (html) {
         let m = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']*?)["']/i)
             || html.match(/<meta[^>]+content=["']([^"']*?)["'][^>]+property=["']og:title["']/i);
-        if (m && m[1].trim()) return decodeEntities(m[1].trim());
+        if (m && m[1].trim()) return lib.decodeEntities(m[1].trim());
 
         m = html.match(/<meta[^>]+name=["']twitter:title["'][^>]+content=["']([^"']*?)["']/i)
             || html.match(/<meta[^>]+content=["']([^"']*?)["'][^>]+name=["']twitter:title["']/i);
-        if (m && m[1].trim()) return decodeEntities(m[1].trim());
+        if (m && m[1].trim()) return lib.decodeEntities(m[1].trim());
 
         m = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-        if (m && m[1].trim()) return decodeEntities(m[1].trim());
+        if (m && m[1].trim()) return lib.decodeEntities(m[1].trim());
 
         return null;
-    }
+    };
 
     // -----------------------------------------------------------------------
-    // Built-in resolvers
+    // HTML fallback resolver (always last in chain)
     // -----------------------------------------------------------------------
-
-    const githubResolver = {
-        name: "GitHub",
-        builtin: true,
-        matches: function (url) {
-            return /github\.com\/[^\/]+\/[^\/]+/.test(url);
-        },
-        resolve: async function (url, fetchFn) {
-            const m = url.match(/github\.com\/([^\/]+)\/([^\/\?#]+)(?:\/(issues|pull|discussions|commit)(?:\/|s\/)(\w+))?/);
-            if (!m) return null;
-
-            const owner = m[1];
-            const repo = m[2].replace(/\.git$/, "");
-            const kind = m[3];
-            const num = m[4];
-
-            let apiUrl;
-            if (kind === "issues" && num) {
-                apiUrl = `https://api.github.com/repos/${owner}/${repo}/issues/${num}`;
-            } else if (kind === "pull" && num) {
-                apiUrl = `https://api.github.com/repos/${owner}/${repo}/pulls/${num}`;
-            } else if (kind === "discussions" && num) {
-                // Discussions API requires GraphQL; fall through to HTML
-                return null;
-            } else if (kind === "commit" && num) {
-                apiUrl = `https://api.github.com/repos/${owner}/${repo}/commits/${num}`;
-            } else {
-                apiUrl = `https://api.github.com/repos/${owner}/${repo}`;
-            }
-
-            const resp = await fetchFn(apiUrl, {
-                headers: { "Accept": "application/vnd.github+json" }
-            });
-
-            if (resp.statusCode < 200 || resp.statusCode >= 300) {
-                return null;
-            }
-
-            const data = JSON.parse(resp.bodyString);
-
-            if (kind === "issues" && num) {
-                return `${data.title} #${num}`;
-            } else if (kind === "pull" && num) {
-                return `${data.title} #${num}`;
-            } else if (kind === "commit" && num) {
-                const firstLine = (data.commit.message || "").split("\n")[0];
-                return `${owner}/${repo}: ${firstLine}`;
-            } else {
-                return data.description
-                    ? `${data.full_name}: ${data.description}`
-                    : data.full_name;
-            }
-        }
-    };
-
-    const jiraResolver = {
-        name: "Jira",
-        builtin: true,
-        matches: function (url) {
-            return /\.atlassian\.net\/browse\/[A-Z]+-\d+/.test(url);
-        },
-        resolve: async function (url, fetchFn) {
-            const m = url.match(/(https?:\/\/[^\/]+)\/browse\/([A-Z]+-\d+)/);
-            if (!m) return null;
-
-            const baseUrl = m[1];
-            const issueKey = m[2];
-            const apiUrl = `${baseUrl}/rest/api/2/issue/${issueKey}?fields=summary`;
-
-            const resp = await fetchFn(apiUrl, {
-                headers: { "Accept": "application/json" }
-            });
-
-            if (resp.statusCode < 200 || resp.statusCode >= 300) {
-                return null;
-            }
-
-            const data = JSON.parse(resp.bodyString);
-            const summary = data.fields && data.fields.summary;
-            return summary ? `${issueKey}: ${summary}` : null;
-        }
-    };
-
-    const youtubeResolver = {
-        name: "YouTube",
-        builtin: true,
-        matches: function (url) {
-            return /(?:youtube\.com\/watch\?|youtu\.be\/|youtube\.com\/shorts\/)/.test(url);
-        },
-        resolve: async function (url, fetchFn) {
-            // oEmbed is free, no API key needed
-            const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`;
-
-            const resp = await fetchFn(oembedUrl, {
-                headers: { "Accept": "application/json" }
-            });
-
-            if (resp.statusCode < 200 || resp.statusCode >= 300) {
-                return null;
-            }
-
-            const data = JSON.parse(resp.bodyString);
-            return data.title || null;
-        }
-    };
 
     const htmlFallbackResolver = {
         name: "HTML",
         builtin: true,
+        priority: 9999,
         matches: function () { return true; },
         resolve: async function (url, fetchFn) {
             const response = await fetchFn(url, {
@@ -180,7 +76,7 @@
                 };
             }
 
-            const title = extractTitle(response.bodyString || "");
+            const title = lib.extractTitle(response.bodyString || "");
             if (!title) {
                 throw {
                     name: "No Title Found",
@@ -192,49 +88,79 @@
     };
 
     // -----------------------------------------------------------------------
+    // Auto-discovery of resolver modules
+    // -----------------------------------------------------------------------
+
+    const RESOLVER_PREFIX = "com.gmail.romansavrulin.resolver-";
+
+    // PlugIn.Library has a read-only `name` property, so resolver modules
+    // store their display name in `resolverName`. Plain objects passed via
+    // addResolver() can use either `resolverName` or `name`.
+    function nameOf(r) {
+        return r.resolverName || r.name || "unknown";
+    }
+
+    function discoverResolvers() {
+        const discovered = [];
+        const plugins = PlugIn.all.filter(p => p.identifier.startsWith(RESOLVER_PREFIX));
+
+        for (const p of plugins) {
+            try {
+                const libName = p.identifier.replace(/^com\.gmail\.romansavrulin\./, "");
+                const resolverLib = p.library(libName);
+                if (resolverLib && resolverLib.resolverName && resolverLib.matches && resolverLib.resolve) {
+                    discovered.push(resolverLib);
+                    console.log(`[resolver] Discovered module: ${nameOf(resolverLib)} (${p.identifier}), priority=${resolverLib.priority || 100}`);
+                } else {
+                    console.log(`[resolver] Skipping ${p.identifier}: missing resolverName/matches/resolve`);
+                }
+            } catch (err) {
+                console.log(`[resolver] Failed to load ${p.identifier}: ${err.message || err}`);
+            }
+        }
+
+        discovered.sort((a, b) => (a.priority || 100) - (b.priority || 100));
+        return discovered;
+    }
+
+    // -----------------------------------------------------------------------
     // Resolver chain
     // -----------------------------------------------------------------------
 
-    // Built-in resolvers in priority order. HTML fallback is always last.
-    const builtinResolvers = [githubResolver, jiraResolver, youtubeResolver];
     const externalResolvers = [];
 
     function allResolvers() {
-        return builtinResolvers.concat(externalResolvers, [htmlFallbackResolver]);
+        const discovered = discoverResolvers();
+        return discovered.concat(externalResolvers, [htmlFallbackResolver]);
     }
 
     // -----------------------------------------------------------------------
     // Public API
     // -----------------------------------------------------------------------
 
-    // Run the resolver chain for a URL. Returns the resolved title string.
-    //
-    // Return contract per resolver:
-    //   non-empty string  -> success, use as title
-    //   null              -> matched but couldn't resolve, try next resolver
-    //   throw             -> hard failure, stop and report error
     lib.resolve = async function (url) {
         console.log(`[resolver] Resolving: ${url}`);
         const chain = allResolvers();
-        const names = chain.map(r => r.name).join(" → ");
+        const names = chain.map(r => nameOf(r)).join(" → ");
         console.log(`[resolver] Chain: ${names}`);
 
         for (const resolver of chain) {
+            const rName = nameOf(resolver);
             if (!resolver.matches(url)) {
-                console.log(`[resolver] ${resolver.name}: no match, skipping`);
+                console.log(`[resolver] ${rName}: no match, skipping`);
                 continue;
             }
-            console.log(`[resolver] ${resolver.name}: matched, resolving...`);
+            console.log(`[resolver] ${rName}: matched, resolving...`);
 
             try {
                 const title = await resolver.resolve(url, sm.authenticatedFetch.bind(sm));
                 if (title && typeof title === "string" && title.trim().length > 0) {
-                    console.log(`[resolver] ${resolver.name}: resolved → "${title.trim()}"`);
+                    console.log(`[resolver] ${rName}: resolved → "${title.trim()}"`);
                     return title.trim();
                 }
-                console.log(`[resolver] ${resolver.name}: returned null/empty, falling through`);
+                console.log(`[resolver] ${rName}: returned null/empty, falling through`);
             } catch (err) {
-                console.log(`[resolver] ${resolver.name}: threw ${err.name}: ${err.message}`);
+                console.log(`[resolver] ${rName}: threw ${err.name}: ${err.message}`);
                 throw err;
             }
         }
@@ -245,17 +171,15 @@
         };
     };
 
-    // Insert a custom resolver before the HTML fallback.
-    // resolver must have: { name: String, matches: Function, resolve: async Function }
     lib.addResolver = function (resolver) {
-        if (!resolver || !resolver.name || !resolver.matches || !resolver.resolve) {
+        if (!resolver || !(resolver.resolverName || resolver.name) || !resolver.matches || !resolver.resolve) {
             throw {
                 name: "InvalidResolver",
-                message: "Resolver must have name, matches, and resolve properties."
+                message: "Resolver must have resolverName (or name), matches, and resolve properties."
             };
         }
-        // Prevent duplicates by name
-        const idx = externalResolvers.findIndex(r => r.name === resolver.name);
+        const rName = nameOf(resolver);
+        const idx = externalResolvers.findIndex(r => nameOf(r) === rName);
         if (idx >= 0) {
             externalResolvers[idx] = resolver;
         } else {
@@ -263,17 +187,16 @@
         }
     };
 
-    // Remove a custom resolver by name. Cannot remove built-in resolvers.
-    lib.removeResolver = function (name) {
-        const idx = externalResolvers.findIndex(r => r.name === name);
+    lib.removeResolver = function (rName) {
+        const idx = externalResolvers.findIndex(r => nameOf(r) === rName);
         if (idx >= 0) externalResolvers.splice(idx, 1);
     };
 
-    // List all resolvers in chain order for debugging.
     lib.listResolvers = function () {
         return allResolvers().map(r => ({
-            name: r.name,
-            builtin: r.builtin || false
+            name: nameOf(r),
+            builtin: r.builtin || false,
+            priority: r.priority || 100
         }));
     };
 

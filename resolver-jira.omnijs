@@ -1,0 +1,43 @@
+/*{
+    "author": "Roman Savrulin",
+    "targets": ["omnifocus", "omnigraffle", "omnioutliner", "omniplan"],
+    "type": "library",
+    "identifier": "com.gmail.romansavrulin.resolver-jira",
+    "version": "0.1"
+}*/
+(() => {
+    "use strict";
+
+    var lib = new PlugIn.Library(new Version("1.0"));
+
+    lib.resolverName = "Jira";
+    lib.builtin = true;
+    lib.priority = 10;
+
+    lib.matches = function (url) {
+        return /\.atlassian\.net\/browse\/[A-Z]+-\d+/.test(url);
+    };
+
+    lib.resolve = async function (url, fetchFn) {
+        const m = url.match(/(https?:\/\/[^\/]+)\/browse\/([A-Z]+-\d+)/);
+        if (!m) return null;
+
+        const baseUrl = m[1];
+        const issueKey = m[2];
+        const apiUrl = `${baseUrl}/rest/api/2/issue/${issueKey}?fields=summary`;
+
+        const resp = await fetchFn(apiUrl, {
+            headers: { "Accept": "application/json" }
+        });
+
+        if (resp.statusCode < 200 || resp.statusCode >= 300) {
+            return null;
+        }
+
+        const data = JSON.parse(resp.bodyString);
+        const summary = data.fields && data.fields.summary;
+        return summary ? `${issueKey}: ${summary}` : null;
+    };
+
+    return lib;
+})();

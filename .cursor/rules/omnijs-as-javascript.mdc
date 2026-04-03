@@ -136,22 +136,99 @@ const title = await resolver.resolve("https://github.com/user/repo/issues/42");
 // -> "Fix login bug #42"
 ```
 
-Runs a chain of resolvers in order. Built-in resolvers: GitHub (repos, issues, PRs, commits), Jira (issues), YouTube (oEmbed), then HTML fallback (og:title / twitter:title / title tag). Auth is handled transparently via `sm.authenticatedFetch`.
+Runs a chain of auto-discovered resolvers in priority order, then any manually added resolvers, then the built-in HTML fallback (og:title / twitter:title / title tag). Auth is handled transparently via `sm.authenticatedFetch`.
 
-### Resolver Interface
+### Auto-Discovery of Resolver Modules
 
-Custom resolvers can be added with `resolver.addResolver(obj)`:
+Resolver modules are separate `.omnijs` library files auto-discovered at resolve time via `PlugIn.all`. Any plug-in whose identifier starts with `com.gmail.romansavrulin.resolver-` is loaded automatically.
+
+Built-in resolver modules:
+- `resolver-github.omnijs` — GitHub repos, issues, PRs, commits via REST API
+- `resolver-jira.omnijs` — Jira issues via REST API
+- `resolver-youtube.omnijs` — YouTube videos via oEmbed
+- `resolver-atushka.omnijs` — Yandex Atushka posts via BFF batch API
+
+To add a new resolver, create a file like `resolver-myservice.omnijs`:
+
+```js
+/*{
+    "author": "Roman Savrulin",
+    "targets": ["omnifocus", "omnigraffle", "omnioutliner", "omniplan"],
+    "type": "library",
+    "identifier": "com.gmail.romansavrulin.resolver-myservice",
+    "version": "0.1"
+}*/
+(() => {
+    "use strict";
+    var lib = new PlugIn.Library(new Version("1.0"));
+
+    lib.resolverName = "MyService";  // must use resolverName, not name (read-only on PlugIn.Library)
+    lib.priority = 10;               // lower = higher priority; HTML fallback is 9999
+
+    lib.matches = function (url) {
+        return /myservice\.com/.test(url);
+    };
+
+    lib.resolve = async function (url, fetchFn) {
+        // fetchFn = sm.authenticatedFetch (auth injected automatically)
+        // Return string (title), null (fall through), or throw (hard error)
+        const resp = await fetchFn(apiUrl, { headers: { "Accept": "application/json" } });
+        return JSON.parse(resp.bodyString).title;
+    };
+
+    return lib;
+})();
+```
+
+### Resolver API Response Structures
+
+**GitHub** (`api.github.com/repos/{owner}/{repo}/issues/{num}`, etc.):
+```json
+{ "title": "...", "full_name": "owner/repo", "description": "...", "commit": { "message": "..." } }
+```
+
+**Jira** (`{base}/rest/api/2/issue/{KEY}?fields=summary`):
+```json
+{ "fields": { "summary": "Issue title" } }
+```
+
+**YouTube** (`youtube.com/oembed?url=...&format=json`):
+```json
+{ "title": "Video title" }
+```
+
+**Atushka** (`at.yandex-team.ru/esoc/hub/bff/api/v1/batch/posts/?postIds={id}`):
+URL pattern: `yandex-team.ru/atushka/post/{id}`
+```json
+{
+  "success": {
+    "<postId>": {
+      "postId": "...",
+      "content": { "title": "...", "snippet": "...", "renderedHtml": "..." },
+      "structuredContent": { "title": "...", "snippet": "...", "widgets": [...] },
+      "postType": "TEXT"
+    }
+  },
+  "errors": {}
+}
+```
+Title is extracted from `success[postId].content.title`, falling back to `success[postId].structuredContent.title`.
+
+### Shared HTML Helpers
+
+The core library exposes utilities for resolver modules that need HTML parsing:
+- `resolver.decodeEntities(text)` — decode HTML entities
+- `resolver.extractTitle(html)` — extract title from og:title, twitter:title, or `<title>` tag
+
+### Resolver Interface (runtime addResolver)
+
+Custom resolvers can also be added at runtime with `resolver.addResolver(obj)`:
 
 ```js
 resolver.addResolver({
     name: "MyService",
     matches: function(url) { return /myservice\.com/.test(url); },
-    resolve: async function(url, fetchFn) {
-        // fetchFn = sm.authenticatedFetch (auth injected automatically)
-        // Return string (title), null (fall through), or throw (hard error)
-        const resp = await fetchFn(apiUrl);
-        return JSON.parse(resp.bodyString).title;
-    }
+    resolve: async function(url, fetchFn) { ... }
 });
 ```
 

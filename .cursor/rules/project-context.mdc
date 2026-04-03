@@ -1,0 +1,52 @@
+---
+description: Project architecture, file inventory, and library dependency map for this OmniFocus plug-in collection
+alwaysApply: true
+---
+
+# Project Context
+
+OmniFocus OmniAutomation plug-in collection by Roman Savrulin. All `.omnijs` files are JavaScript executed by the OmniAutomation runtime.
+
+## File Inventory
+
+### Libraries (type: library)
+
+- `st-api-library.omnijs` — shared utility library. Exports `firstURL` / `firstURLFromText` (extract first http(s) URL from text). ID: `com.gmail.romansavrulin.st-api-library`
+- `secret-manager-library.omnijs` — centralized credential manager. Stores service registry in `Preferences` (JSON) and secrets in `Credentials` (keychain). Exposes `authenticatedFetch(url, options)` which transparently injects auth headers by URL origin match. ID: `com.gmail.romansavrulin.secret-manager-library`
+- `url-resolver-library.omnijs` — extensible URL-to-title resolver chain. Auto-discovers resolver plug-ins via `PlugIn.all` using identifier prefix `com.gmail.romansavrulin.resolver-`. Falls back to HTML title parsing. ID: `com.gmail.romansavrulin.url-resolver-library`
+- `resolver-*.omnijs` — individual resolver modules (GitHub, Jira, YouTube, Atushka, etc.). Each is a library exporting `resolverName`, `priority`, `matches(url)`, `resolve(url, fetchFn)`. Auto-discovered by the core resolver library. Note: `PlugIn.Library` has a read-only `name` property, so display names use `resolverName`.
+
+### Actions (type: action)
+
+- `URL-to-TaskName.omnijs` — renames selected tasks using resolved page/resource titles. Uses `url-resolver-library` for resolution and `st-api-library` for URL extraction. ID: `com.gmail.romansavrulin.url-to-task-name`
+- `URL-to-Comment.omnijs` — moves URLs from task names to notes. Uses `st-api-library.firstURLFromText`. ID: `com.gmail.romansavrulin.url-to-comment`
+- `copyAsURL.omnijs` — copies tasks as formatted HTML links to clipboard. Uses `st-api-library.firstURLFromText`. ID: `com.gmail.romansavrulin.copy-as-url`
+- `ManageSecrets.omnijs` — CRUD UI for secret-manager-library services (list/add/edit/delete credentials). ID: `com.gmail.romansavrulin.manage-secrets`
+- `RestTest.omnijs` — StarTrek API test action. Uses `secret-manager-library.authenticatedFetch`. Ctrl+click shows credential status. ID: `com.gmail.romansavrulin.startrek-get`
+- `Randomize Review Date.omnijs` — randomizes review dates for selected projects. Standalone, no library deps. ID: `com.gmail.romansavrulin.Randomize-Review-Date`
+
+## Dependency Graph
+
+```
+URL-to-TaskName → url-resolver-library → secret-manager-library
+                → st-api-library
+URL-to-Comment  → st-api-library
+copyAsURL       → st-api-library
+RestTest        → secret-manager-library
+ManageSecrets   → secret-manager-library
+resolver-*      → (loaded by url-resolver-library, receive fetchFn from secret-manager)
+```
+
+## Key Patterns
+
+- All network requests go through `sm.authenticatedFetch()` so auth is injected transparently
+- Resolver plug-ins are auto-discovered by identifier prefix `com.gmail.romansavrulin.resolver-`
+- Resolver return contract: non-empty string = success, null = fall through, throw = hard error
+- `Credentials` and `Preferences` must be instantiated at plug-in load time (IIFE scope)
+- Debug logging uses `[resolver]` and `[auth]` prefixes in `console.log`
+
+## Identifier Conventions
+
+- Libraries: `com.gmail.romansavrulin.<name>-library`
+- Actions: `com.gmail.romansavrulin.<name>`
+- Resolvers: `com.gmail.romansavrulin.resolver-<service>`

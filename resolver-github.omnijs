@@ -1,0 +1,68 @@
+/*{
+    "author": "Roman Savrulin",
+    "targets": ["omnifocus", "omnigraffle", "omnioutliner", "omniplan"],
+    "type": "library",
+    "identifier": "com.gmail.romansavrulin.resolver-github",
+    "version": "0.1"
+}*/
+(() => {
+    "use strict";
+
+    var lib = new PlugIn.Library(new Version("1.0"));
+
+    lib.resolverName = "GitHub";
+    lib.builtin = true;
+    lib.priority = 10;
+
+    lib.matches = function (url) {
+        return /github\.com\/[^\/]+\/[^\/]+/.test(url);
+    };
+
+    lib.resolve = async function (url, fetchFn) {
+        const m = url.match(/github\.com\/([^\/]+)\/([^\/\?#]+)(?:\/(issues|pull|discussions|commit)(?:\/|s\/)(\w+))?/);
+        if (!m) return null;
+
+        const owner = m[1];
+        const repo = m[2].replace(/\.git$/, "");
+        const kind = m[3];
+        const num = m[4];
+
+        let apiUrl;
+        if (kind === "issues" && num) {
+            apiUrl = `https://api.github.com/repos/${owner}/${repo}/issues/${num}`;
+        } else if (kind === "pull" && num) {
+            apiUrl = `https://api.github.com/repos/${owner}/${repo}/pulls/${num}`;
+        } else if (kind === "discussions" && num) {
+            return null;
+        } else if (kind === "commit" && num) {
+            apiUrl = `https://api.github.com/repos/${owner}/${repo}/commits/${num}`;
+        } else {
+            apiUrl = `https://api.github.com/repos/${owner}/${repo}`;
+        }
+
+        const resp = await fetchFn(apiUrl, {
+            headers: { "Accept": "application/vnd.github+json" }
+        });
+
+        if (resp.statusCode < 200 || resp.statusCode >= 300) {
+            return null;
+        }
+
+        const data = JSON.parse(resp.bodyString);
+
+        if (kind === "issues" && num) {
+            return `${data.title} #${num}`;
+        } else if (kind === "pull" && num) {
+            return `${data.title} #${num}`;
+        } else if (kind === "commit" && num) {
+            const firstLine = (data.commit.message || "").split("\n")[0];
+            return `${owner}/${repo}: ${firstLine}`;
+        } else {
+            return data.description
+                ? `${data.full_name}: ${data.description}`
+                : data.full_name;
+        }
+    };
+
+    return lib;
+})();
