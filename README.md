@@ -13,9 +13,9 @@ Keeps only the first line of a task name and moves any URL found in it to the ta
 ---
 
 ### URL → Task Name (`URL-to-TaskName.omnijs`)
-Fetches the URL found in the task note (or name) and renames the task using the web page title — like a link preview in a messenger.
+Fetches the URL found in the task note (or name) and renames the task using the web page title — like a link preview in a messenger. When a resolver returns a description (e.g. StarTrek issue descriptions in YFM format), it is rendered as **rich text** in the task note with bold headings, links, bullet lists, code blocks, and more.
 
-**Works in:** OmniFocus  
+**Works in:** OmniFocus
 **Select:** One or more tasks
 
 ---
@@ -33,6 +33,25 @@ Randomizes the next review date for selected projects based on each project's ex
 
 **Works in:** OmniFocus  
 **Select:** One or more projects
+
+---
+
+### YFM Renderer Library (`yfm-renderer-library.omnijs`)
+Parses **Yandex Flavored Markdown (YFM)** and renders it as rich text using the OmniFocus `Text` API. Used by `URL-to-TaskName.omnijs` to render StarTrek issue descriptions with formatting.
+
+**Supported constructs:**
+- Headings (`# H1` through `###### H6`) — bold, sized fonts
+- **Bold**, *italic*, ***bold-italic***, ~~strikethrough~~
+- [Links](url) — clickable hyperlinks in the note
+- Inline `code` and fenced code blocks — monospace font
+- Unordered and ordered lists with indentation
+- Blockquotes — italic with `┃` prefix
+- Markdown tables — header row in bold
+- Horizontal rules
+- YFM `{% cut "title" %}...{% endcut %}` — collapsible sections rendered with ▶ prefix
+- YFM `{% note info/tip/warning/alert %}...{% endnote %}` — callout blocks with emoji prefixes
+
+**Type:** Library
 
 ---
 

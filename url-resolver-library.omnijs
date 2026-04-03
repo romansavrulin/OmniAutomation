@@ -152,6 +152,24 @@
     // Public API
     // -----------------------------------------------------------------------
 
+    // Normalize resolver return value to { title, description, descriptionFormat }.
+    // Resolvers may return a plain string (title only) or an object
+    // with { title: string, description?: string, descriptionFormat?: string }.
+    function normalizeResult(raw) {
+        if (!raw) return null;
+        if (typeof raw === "string") {
+            return raw.trim().length > 0 ? { title: raw.trim(), description: null, descriptionFormat: null } : null;
+        }
+        if (typeof raw === "object" && raw.title && typeof raw.title === "string" && raw.title.trim().length > 0) {
+            return {
+                title: raw.title.trim(),
+                description: raw.description || null,
+                descriptionFormat: raw.descriptionFormat || null
+            };
+        }
+        return null;
+    }
+
     lib.resolve = async function (url) {
         console.log(`[resolver] Resolving: ${url}`);
         const chain = allResolvers();
@@ -167,10 +185,11 @@
             console.log(`[resolver] ${rName}: matched, resolving...`);
 
             try {
-                const title = await resolver.resolve(url, sm.authenticatedFetch.bind(sm));
-                if (title && typeof title === "string" && title.trim().length > 0) {
-                    console.log(`[resolver] ${rName}: resolved → "${title.trim()}"`);
-                    return title.trim();
+                const raw = await resolver.resolve(url, sm.authenticatedFetch.bind(sm));
+                const result = normalizeResult(raw);
+                if (result) {
+                    console.log(`[resolver] ${rName}: resolved → "${result.title}"${result.description ? " (+description)" : ""}`);
+                    return result;
                 }
                 console.log(`[resolver] ${rName}: returned null/empty, falling through`);
             } catch (err) {

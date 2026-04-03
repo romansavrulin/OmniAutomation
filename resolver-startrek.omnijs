@@ -38,7 +38,13 @@
         if (!issue) return null;
 
         const key = issue.key || issueKey;
-        return issue.summary ? `${key}: ${issue.summary}` : null;
+        if (!issue.summary) return null;
+
+        return {
+            title: `${key}: ${issue.summary}`,
+            description: issue.description || null,
+            descriptionFormat: "yfm"
+        };
     };
 
     return lib;

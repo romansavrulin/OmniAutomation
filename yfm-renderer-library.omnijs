@@ -1,0 +1,473 @@
+/*{
+    "author": "Roman Savrulin",
+    "targets": ["omnifocus"],
+    "type": "library",
+    "identifier": "com.gmail.romansavrulin.yfm-renderer-library",
+    "version": "0.2"
+}*/
+(() => {
+    "use strict";
+
+    var lib = new PlugIn.Library(new Version("1.0"));
+
+    // -----------------------------------------------------------------------
+    // YFM block-level patterns
+    // -----------------------------------------------------------------------
+
+    const RE_HEADING = /^(#{1,6})\s+(.+)$/;
+    const RE_HR = /^(-{3,}|_{3,}|\*{3,})\s*$/;
+    const RE_UL = /^(\s*)([-*+])\s+(.+)$/;
+    const RE_OL = /^(\s*)(\d+)[.)]\s+(.+)$/;
+    const RE_BLOCKQUOTE = /^>\s?(.*)$/;
+    const RE_CODE_FENCE = /^(`{3,}|~{3,})(\w*)\s*$/;
+
+    // YFM-specific blocks
+    const RE_YFM_CUT_OPEN = /^\{%\s*cut\s*["'](.+?)["']\s*%\}$/;
+    const RE_YFM_CUT_CLOSE = /^\{%\s*endcut\s*%\}$/;
+    const RE_YFM_NOTE_OPEN = /^\{%\s*note\s+(info|tip|warning|alert|important)\s*(?:["'](.+?)["'])?\s*%\}$/;
+    const RE_YFM_NOTE_CLOSE = /^\{%\s*endnote\s*%\}$/;
+
+    // -----------------------------------------------------------------------
+    // YFM Note type → emoji mapping
+    // -----------------------------------------------------------------------
+
+    const NOTE_EMOJI = {
+        "info": "ℹ️",
+        "tip": "💡",
+        "warning": "⚠️",
+        "alert": "🚨",
+        "important": "❗"
+    };
+
+    // -----------------------------------------------------------------------
+    // Heading sizes
+    // -----------------------------------------------------------------------
+
+    const HEADING_SIZES = { 1: 20, 2: 17, 3: 15, 4: 13, 5: 12, 6: 11 };
+
+    // -----------------------------------------------------------------------
+    // Inline markdown parser
+    // -----------------------------------------------------------------------
+
+    /**
+     * Parse inline markdown and return an array of segments.
+     * Each segment: { text, bold, italic, code, strikethrough, link }
+     */
+    function parseInline(text) {
+        if (!text) return [{ text: "", bold: false, italic: false, code: false, strikethrough: false, link: null }];
+
+        const matches = [];
+        let m;
+
+        // Images: ![alt](url) → [📷 alt] with link
+        const imgRe = /!\[([^\]]*?)\]\(([^)]+?)\)/g;
+        while ((m = imgRe.exec(text)) !== null) {
+            matches.push({ start: m.index, end: m.index + m[0].length, type: "image", content: m[1] || "Image", url: m[2] });
+        }
+
+        // Links: [text](url)
+        const linkRe = /\[([^\]]+?)\]\(([^)]+?)\)/g;
+        while ((m = linkRe.exec(text)) !== null) {
+            if (matches.some(x => m.index >= x.start && m.index < x.end)) continue;
+            matches.push({ start: m.index, end: m.index + m[0].length, type: "link", content: m[1], url: m[2] });
+        }
+
+        // Inline code: `code`
+        const codeRe = /`([^`]+?)`/g;
+        while ((m = codeRe.exec(text)) !== null) {
+            if (matches.some(x => m.index >= x.start && m.index < x.end)) continue;
+            matches.push({ start: m.index, end: m.index + m[0].length, type: "code", content: m[1] });
+        }
+
+        // Bold-italic: ***text***
+        const biRe = /(\*{3}|_{3})(?!\s)([\s\S]+?)(?!\s)\1/g;
+        while ((m = biRe.exec(text)) !== null) {
+            if (matches.some(x => m.index >= x.start && m.index < x.end)) continue;
+            matches.push({ start: m.index, end: m.index + m[0].length, type: "bold-italic", content: m[2] });
+        }
+
+        // Bold: **text**
+        const boldRe = /(\*{2}|_{2})(?!\s)([\s\S]+?)(?!\s)\1/g;
+        while ((m = boldRe.exec(text)) !== null) {
+            if (matches.some(x => m.index >= x.start && m.index < x.end)) continue;
+            matches.push({ start: m.index, end: m.index + m[0].length, type: "bold", content: m[2] });
+        }
+
+        // Italic: *text*
+        const italRe = /(\*)(?!\s)([\s\S]+?)(?!\s)\1/g;
+        while ((m = italRe.exec(text)) !== null) {
+            if (matches.some(x => m.index >= x.start && m.index < x.end)) continue;
+            matches.push({ start: m.index, end: m.index + m[0].length, type: "italic", content: m[2] });
+        }
+
+        // Strikethrough: ~~text~~
+        const strikeRe = /~~(?!\s)([\s\S]+?)(?!\s)~~/g;
+        while ((m = strikeRe.exec(text)) !== null) {
+            if (matches.some(x => m.index >= x.start && m.index < x.end)) continue;
+            matches.push({ start: m.index, end: m.index + m[0].length, type: "strikethrough", content: m[1] });
+        }
+
+        matches.sort((a, b) => a.start - b.start);
+
+        const segments = [];
+        let pos = 0;
+
+        for (const match of matches) {
+            if (match.start > pos) {
+                segments.push({ text: text.slice(pos, match.start), bold: false, italic: false, code: false, strikethrough: false, link: null });
+            }
+            switch (match.type) {
+                case "bold-italic":
+                    segments.push({ text: match.content, bold: true, italic: true, code: false, strikethrough: false, link: null });
+                    break;
+                case "bold":
+                    segments.push({ text: match.content, bold: true, italic: false, code: false, strikethrough: false, link: null });
+                    break;
+                case "italic":
+                    segments.push({ text: match.content, bold: false, italic: true, code: false, strikethrough: false, link: null });
+                    break;
+                case "strikethrough":
+                    segments.push({ text: match.content, bold: false, italic: false, code: false, strikethrough: true, link: null });
+                    break;
+                case "code":
+                    segments.push({ text: match.content, bold: false, italic: false, code: true, strikethrough: false, link: null });
+                    break;
+                case "link":
+                    segments.push({ text: match.content, bold: false, italic: false, code: false, strikethrough: false, link: match.url });
+                    break;
+                case "image":
+                    segments.push({ text: "[📷 " + match.content + "]", bold: false, italic: false, code: false, strikethrough: false, link: match.url });
+                    break;
+            }
+            pos = match.end;
+        }
+
+        if (pos < text.length) {
+            segments.push({ text: text.slice(pos), bold: false, italic: false, code: false, strikethrough: false, link: null });
+        }
+
+        return segments.length > 0 ? segments : [{ text: text, bold: false, italic: false, code: false, strikethrough: false, link: null }];
+    }
+
+    // -----------------------------------------------------------------------
+    // Text object helpers
+    // -----------------------------------------------------------------------
+
+    /**
+     * Create a styled Text object from a segment.
+     * @param {string} str - The text content
+     * @param {Style} baseStyle - The base style from the note
+     * @param {object} opts - { bold, italic, code, link, fontSize, headIndent, firstLineIndent }
+     * @returns {Text}
+     */
+    function styledText(str, baseStyle, opts) {
+        var textObj = new Text(str, baseStyle);
+        var style = textObj.styleForRange(textObj.range);
+
+        if (opts.bold) {
+            style.set(Style.Attribute.FontWeight, 9);
+        }
+        if (opts.italic) {
+            style.set(Style.Attribute.FontItalic, true);
+        }
+        if (opts.code) {
+            style.set(Style.Attribute.FontFamily, "Menlo");
+        }
+        if (opts.fontSize) {
+            style.set(Style.Attribute.FontSize, opts.fontSize);
+        }
+        if (opts.link) {
+            style.set(Style.Attribute.Link, URL.fromString(opts.link));
+        }
+        if (opts.headIndent) {
+            style.set(Style.Attribute.ParagraphHeadIndent, opts.headIndent);
+        }
+        if (opts.firstLineIndent !== undefined && opts.firstLineIndent !== null) {
+            style.set(Style.Attribute.ParagraphFirstLineHeadIndent, opts.firstLineIndent);
+        }
+
+        return textObj;
+    }
+
+    /**
+     * Append inline-parsed text segments to a Text object.
+     * @param {Text} targetText - The Text object to append to
+     * @param {string} inlineStr - The markdown inline string to parse
+     * @param {Style} baseStyle - The base style
+     * @param {object} extraOpts - Additional style options to merge (e.g., { fontSize: 20 })
+     */
+    function appendInline(targetText, inlineStr, baseStyle, extraOpts) {
+        var segments = parseInline(inlineStr);
+        var extra = extraOpts || {};
+        for (var si = 0; si < segments.length; si++) {
+            var seg = segments[si];
+            var opts = {
+                bold: seg.bold || extra.bold || false,
+                italic: seg.italic || extra.italic || false,
+                code: seg.code || extra.code || false,
+                fontSize: extra.fontSize || null,
+                link: seg.link || null
+            };
+            // For strikethrough, use Unicode combining stroke
+            var displayText = seg.strikethrough
+                ? seg.text.split("").join("\u0336") + "\u0336"
+                : seg.text;
+            targetText.append(styledText(displayText, baseStyle, opts));
+        }
+    }
+
+    /**
+     * Append a newline to a Text object.
+     */
+    function appendNewline(targetText, baseStyle) {
+        targetText.append(new Text("\n", baseStyle));
+    }
+
+    // -----------------------------------------------------------------------
+    // Block-level parser & renderer
+    // -----------------------------------------------------------------------
+
+    /**
+     * Render YFM/Markdown text into an OmniFocus Text object with rich formatting.
+     *
+     * @param {string} yfmText - The YFM/Markdown source text
+     * @param {Style} baseStyle - The base style from the note (obtained via noteText.style)
+     * @returns {Text} - An OmniFocus Text object with rich formatting
+     */
+    lib.render = function (yfmText, baseStyle) {
+        if (!yfmText || typeof yfmText !== "string") {
+            return new Text("", baseStyle);
+        }
+
+        var lines = yfmText.split("\n");
+        var result = new Text("", baseStyle);
+        var i = 0;
+        var firstBlock = true;
+
+        function addBlockSeparator() {
+            if (!firstBlock) {
+                appendNewline(result, baseStyle);
+            }
+            firstBlock = false;
+        }
+
+        while (i < lines.length) {
+            var line = lines[i];
+
+            // --- Empty line ---
+            if (line.trim() === "") {
+                i++;
+                continue;
+            }
+
+            // --- Code fence ---
+            var codeFenceMatch = line.match(RE_CODE_FENCE);
+            if (codeFenceMatch) {
+                addBlockSeparator();
+                var fence = codeFenceMatch[1];
+                var lang = codeFenceMatch[2] || "";
+                var codeLines = [];
+                i++;
+                while (i < lines.length) {
+                    if (lines[i].match(new RegExp("^" + fence.charAt(0) + "{" + fence.length + ",}\\s*$"))) {
+                        i++;
+                        break;
+                    }
+                    codeLines.push(lines[i]);
+                    i++;
+                }
+                if (lang) {
+                    result.append(styledText(lang.toUpperCase() + ":\n", baseStyle, { bold: true, code: true }));
+                }
+                var codeText = codeLines.join("\n") + "\n";
+                result.append(styledText(codeText, baseStyle, { code: true }));
+                continue;
+            }
+
+            // --- YFM Cut block ---
+            var cutMatch = line.match(RE_YFM_CUT_OPEN);
+            if (cutMatch) {
+                addBlockSeparator();
+                result.append(styledText("▶ " + cutMatch[1] + "\n", baseStyle, { bold: true }));
+                i++;
+                var cutLines = [];
+                while (i < lines.length && !RE_YFM_CUT_CLOSE.test(lines[i])) {
+                    cutLines.push(lines[i]);
+                    i++;
+                }
+                if (i < lines.length) i++;
+                if (cutLines.length > 0) {
+                    var innerText = lib.render(cutLines.join("\n"), baseStyle);
+                    result.append(innerText);
+                    appendNewline(result, baseStyle);
+                }
+                continue;
+            }
+
+            // --- YFM Note block ---
+            var noteMatch = line.match(RE_YFM_NOTE_OPEN);
+            if (noteMatch) {
+                addBlockSeparator();
+                var noteType = noteMatch[1];
+                var noteTitle = noteMatch[2] || noteType.charAt(0).toUpperCase() + noteType.slice(1);
+                var emoji = NOTE_EMOJI[noteType] || "📌";
+                result.append(styledText(emoji + " " + noteTitle + "\n", baseStyle, { bold: true }));
+                i++;
+                var noteLines = [];
+                while (i < lines.length && !RE_YFM_NOTE_CLOSE.test(lines[i])) {
+                    noteLines.push(lines[i]);
+                    i++;
+                }
+                if (i < lines.length) i++;
+                if (noteLines.length > 0) {
+                    var innerNoteText = lib.render(noteLines.join("\n"), baseStyle);
+                    result.append(innerNoteText);
+                    appendNewline(result, baseStyle);
+                }
+                continue;
+            }
+
+            // --- Skip standalone YFM close tags ---
+            if (RE_YFM_CUT_CLOSE.test(line) || RE_YFM_NOTE_CLOSE.test(line)) {
+                i++;
+                continue;
+            }
+
+            // --- Heading ---
+            var headingMatch = line.match(RE_HEADING);
+            if (headingMatch) {
+                addBlockSeparator();
+                var level = headingMatch[1].length;
+                var headingText = headingMatch[2].trim();
+                var fontSize = HEADING_SIZES[level] || 12;
+                appendInline(result, headingText, baseStyle, { bold: true, fontSize: fontSize });
+                appendNewline(result, baseStyle);
+                i++;
+                continue;
+            }
+
+            // --- Horizontal rule ---
+            if (RE_HR.test(line)) {
+                addBlockSeparator();
+                result.append(new Text("────────────────\n", baseStyle));
+                i++;
+                continue;
+            }
+
+            // --- Unordered list ---
+            var ulMatch = line.match(RE_UL);
+            if (ulMatch) {
+                addBlockSeparator();
+                while (i < lines.length) {
+                    var ulm = lines[i].match(RE_UL);
+                    if (!ulm) break;
+                    var indent = Math.floor(ulm[1].length / 2);
+                    var baseIndent = 18 + indent * 18;
+                    // Bullet prefix with paragraph indentation
+                    var bulletPrefix = styledText("\t• ", baseStyle, {
+                        firstLineIndent: indent * 18,
+                        headIndent: baseIndent
+                    });
+                    result.append(bulletPrefix);
+                    // Inline-parsed content (handles **bold**, *italic*, links, etc.)
+                    appendInline(result, ulm[3].trim(), baseStyle, {});
+                    appendNewline(result, baseStyle);
+                    i++;
+                }
+                continue;
+            }
+
+            // --- Ordered list ---
+            var olMatch = line.match(RE_OL);
+            if (olMatch) {
+                addBlockSeparator();
+                var num = 1;
+                while (i < lines.length) {
+                    var olm = lines[i].match(RE_OL);
+                    if (!olm) break;
+                    var olIndent = Math.floor(olm[1].length / 2);
+                    var olBaseIndent = 24 + olIndent * 18;
+                    // Number prefix with paragraph indentation
+                    var numPrefix = styledText("\t" + num + ". ", baseStyle, {
+                        firstLineIndent: olIndent * 18,
+                        headIndent: olBaseIndent
+                    });
+                    result.append(numPrefix);
+                    // Inline-parsed content
+                    appendInline(result, olm[3].trim(), baseStyle, {});
+                    appendNewline(result, baseStyle);
+                    num++;
+                    i++;
+                }
+                continue;
+            }
+
+            // --- Blockquote ---
+            var bqMatch = line.match(RE_BLOCKQUOTE);
+            if (bqMatch) {
+                addBlockSeparator();
+                var quoteLines = [];
+                while (i < lines.length) {
+                    var bqm = lines[i].match(RE_BLOCKQUOTE);
+                    if (!bqm) break;
+                    quoteLines.push(bqm[1]);
+                    i++;
+                }
+                var quoteText = quoteLines.join(" ").trim();
+                result.append(styledText("┃ ", baseStyle, {}));
+                appendInline(result, quoteText, baseStyle, { italic: true });
+                appendNewline(result, baseStyle);
+                continue;
+            }
+
+            // --- Table ---
+            if (line.includes("|") && line.trim().startsWith("|")) {
+                addBlockSeparator();
+                var tableLines = [];
+                while (i < lines.length && lines[i].includes("|") && lines[i].trim().startsWith("|")) {
+                    tableLines.push(lines[i]);
+                    i++;
+                }
+                for (var ti = 0; ti < tableLines.length; ti++) {
+                    var tl = tableLines[ti].trim();
+                    if (/^\|[\s\-:|]+\|$/.test(tl)) continue;
+                    var cells = tl.split("|").filter(function(c) { return c.trim() !== ""; });
+                    var isHeader = (ti === 0);
+                    var cellText = cells.map(function(c) { return c.trim(); }).join("  │  ");
+                    if (isHeader) {
+                        result.append(styledText(cellText + "\n", baseStyle, { bold: true }));
+                    } else {
+                        result.append(new Text(cellText + "\n", baseStyle));
+                    }
+                }
+                continue;
+            }
+
+            // --- Regular paragraph ---
+            addBlockSeparator();
+            var paraLines = [];
+            while (i < lines.length) {
+                var pl = lines[i];
+                if (pl.trim() === "") break;
+                if (RE_HEADING.test(pl) || RE_HR.test(pl) || RE_CODE_FENCE.test(pl) ||
+                    RE_UL.test(pl) || RE_OL.test(pl) || RE_BLOCKQUOTE.test(pl) ||
+                    RE_YFM_CUT_OPEN.test(pl) || RE_YFM_NOTE_OPEN.test(pl) ||
+                    RE_YFM_CUT_CLOSE.test(pl) || RE_YFM_NOTE_CLOSE.test(pl) ||
+                    (pl.includes("|") && pl.trim().startsWith("|"))) {
+                    break;
+                }
+                paraLines.push(pl);
+                i++;
+            }
+            var paraText = paraLines.join(" ").trim();
+            if (paraText) {
+                appendInline(result, paraText, baseStyle, {});
+                appendNewline(result, baseStyle);
+            }
+        }
+
+        return result;
+    };
+
+    return lib;
+})();

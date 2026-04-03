@@ -3,8 +3,8 @@
     "targets": ["omnifocus"],
     "author": "Roman Savrulin",
     "identifier": "com.gmail.romansavrulin.url-to-task-name",
-    "version": "0.2",
-    "description": "Smart URL handler: if the task name has a URL alongside other text, extracts the URL to the note and keeps the caption. If the name is just a URL (or the URL is only in the note), resolves it to a page title.",
+    "version": "0.3",
+    "description": "Smart URL handler: if the task name has a URL alongside other text, extracts the URL to the note and keeps the caption. If the name is just a URL (or the URL is only in the note), resolves it to a page title. Supports rich text rendering for YFM descriptions.",
     "label": "URL → Task Name",
     "shortLabel": "URL → Name",
     "paletteLabel": "URL → Task Name",
@@ -15,6 +15,88 @@
 
     const resolver = PlugIn.find("com.gmail.romansavrulin.url-resolver-library").library("url-resolver-library");
     const firstURL = resolver.firstURL;
+
+    // Lazy-load the YFM renderer (may not be installed)
+    let yfmRenderer = null;
+    function getYfmRenderer() {
+        if (yfmRenderer) return yfmRenderer;
+        try {
+            const plugin = PlugIn.find("com.gmail.romansavrulin.yfm-renderer-library");
+            if (plugin) {
+                yfmRenderer = plugin.library("yfm-renderer-library");
+            }
+        } catch (e) {
+            console.log("[URL→Name] YFM renderer not available: " + (e.message || e));
+        }
+        return yfmRenderer;
+    }
+
+    // Description separator used to delimit the rendered description in the note.
+    const DESC_SEPARATOR = "── Description ──";
+
+    /**
+     * Set the description in the task note as rich text using task.noteText.
+     *
+     * Note structure:
+     *   <URL line>
+     *   <any user content>
+     *   ── Description ──
+     *   <rendered description — rich text with bold, italic, links, etc.>
+     *
+     * @param {Task} task - The OmniFocus task
+     * @param {string} notePrefix - Plain text to place before the separator (URL + user content)
+     * @param {string} description - Raw description text from the resolver
+     * @param {string|null} descriptionFormat - Format hint ("yfm" or null for plain)
+     */
+    function setDescriptionRichText(task, notePrefix, description, descriptionFormat) {
+        // First, set the plain text note prefix (URL, etc.)
+        // This also cleans up any legacy content
+        var cleanPrefix = (notePrefix || "").trim();
+
+        // Remove legacy HTML comment blocks
+        cleanPrefix = cleanPrefix.replace(/<!--resolver:description\n[\s\S]*?\nresolver:description-->/g, "").trim();
+
+        // Remove any existing separator and everything after it
+        var sepIdx = cleanPrefix.indexOf(DESC_SEPARATOR);
+        if (sepIdx >= 0) {
+            cleanPrefix = cleanPrefix.substring(0, sepIdx).trim();
+        }
+
+        // Set the base note text (plain string sets the note content)
+        task.note = cleanPrefix + "\n" + DESC_SEPARATOR;
+
+        // Now access the rich text object
+        var noteObj = task.noteText;
+
+        // Get a clean base style without any Link attribute.
+        // We create a temporary text to get a fresh style, then clear Link.
+        var cleanText = new Text(" ", noteObj.style);
+        var cleanStyle = cleanText.styleForRange(cleanText.range);
+        cleanStyle.set(Style.Attribute.Link, null);
+        var baseStyle = cleanText.style;
+
+        // Add bold separator styling to the separator line
+        var findParams = [];
+        var sepRange = noteObj.find(DESC_SEPARATOR, findParams, noteObj.range);
+        if (sepRange) {
+            var sepStyle = noteObj.styleForRange(sepRange);
+            sepStyle.set(Style.Attribute.FontWeight, 9);
+            sepStyle.set(Style.Attribute.Link, null);
+        }
+
+        // Add spacing after separator via Text API (OmniFocus trims trailing \n from task.note)
+        noteObj.append(new Text("\n\n", baseStyle));
+
+        // Render and append the description as rich text
+        var renderer = getYfmRenderer();
+        if (descriptionFormat === "yfm" && renderer) {
+            var renderedText = renderer.render(description, baseStyle);
+            noteObj.append(renderedText);
+        } else {
+            // Plain text fallback
+            noteObj.append(new Text(description, baseStyle));
+        }
+    }
 
     function extractURLToNote(task) {
         const fullName = task.name || "Untitled";
@@ -67,16 +149,29 @@
                 }
 
                 try {
-                    const title = await resolver.resolve(url);
+                    const result = await resolver.resolve(url);
                     const oldName = task.name;
-                    task.name = title;
+                    task.name = result.title;
 
+                    // Ensure URL is in the note
+                    let currentNote = task.note ? task.note.trim() : "";
                     if (urlInName && !urlFromNote) {
-                        const existingNote = task.note ? task.note.trim() : "";
-                        task.note = existingNote ? `${url}\n${existingNote}` : url;
+                        currentNote = currentNote ? `${url}\n${currentNote}` : url;
                     }
 
-                    resolved.push(`"${oldName}" → "${title}"`);
+                    if (result.description) {
+                        // Set rich text description in the note
+                        setDescriptionRichText(
+                            task,
+                            currentNote,
+                            result.description,
+                            result.descriptionFormat
+                        );
+                    } else {
+                        task.note = currentNote;
+                    }
+
+                    resolved.push(`"${oldName}" → "${result.title}"`);
                 } catch (err) {
                     failed.push(`"${task.name}" — ${err.name}: ${err.message}`);
                 }
