@@ -14,64 +14,8 @@
     "use strict";
 
     const lib = PlugIn.find("com.gmail.romansavrulin.st-api-library").library("st-api-library");
-    const sm = PlugIn.find("com.gmail.romansavrulin.secret-manager-library").library("secret-manager-library");
+    const resolver = PlugIn.find("com.gmail.romansavrulin.url-resolver-library").library("url-resolver-library");
     const firstURL = lib.firstURL;
-
-    function decodeEntities(text) {
-        return text
-            .replace(/&amp;/g, "&")
-            .replace(/&lt;/g, "<")
-            .replace(/&gt;/g, ">")
-            .replace(/&quot;/g, '"')
-            .replace(/&#39;|&apos;/g, "'")
-            .replace(/&nbsp;/g, " ")
-            .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)))
-            .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCharCode(parseInt(h, 16)));
-    }
-
-    function extractTitle(html) {
-        // og:title — cleanest, no site name appended
-        let m = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']*?)["']/i)
-               || html.match(/<meta[^>]+content=["']([^"']*?)["'][^>]+property=["']og:title["']/i);
-        if (m && m[1].trim()) return decodeEntities(m[1].trim());
-
-        // twitter:title — good fallback for sites without og:title
-        m = html.match(/<meta[^>]+name=["']twitter:title["'][^>]+content=["']([^"']*?)["']/i)
-          || html.match(/<meta[^>]+content=["']([^"']*?)["'][^>]+name=["']twitter:title["']/i);
-        if (m && m[1].trim()) return decodeEntities(m[1].trim());
-
-        // <title> — last resort, often contains " | Site Name" suffixes
-        m = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-        if (m && m[1].trim()) return decodeEntities(m[1].trim());
-
-        return null;
-    }
-
-    async function fetchPageTitle(urlString) {
-        const response = await sm.authenticatedFetch(urlString, {
-            headers: {
-                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
-                "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
-                "Accept-Language": "en-US,en;q=0.9"
-            }
-        });
-
-        if (response.statusCode < 200 || response.statusCode >= 300) {
-            throw { name: `HTTP ${response.statusCode}`, message: `Server returned ${response.statusCode} for: ${urlString}` };
-        }
-
-        const mime = response.mimeType || "";
-        if (!mime.includes("html")) {
-            throw { name: "Not HTML", message: `Response MIME type is "${mime}", cannot extract title from: ${urlString}` };
-        }
-
-        const title = extractTitle(response.bodyString || "");
-        if (!title) {
-            throw { name: "No Title Found", message: `Could not find og:title or <title> tag at: ${urlString}` };
-        }
-
-        return title;
-    }
 
     const action = new PlugIn.Action(async function (selection, sender) {
         try {
@@ -96,7 +40,7 @@
                 }
 
                 try {
-                    const title = await fetchPageTitle(url);
+                    const title = await resolver.resolve(url);
                     const oldName = task.name;
                     task.name = title;
 

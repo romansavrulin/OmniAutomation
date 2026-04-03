@@ -121,6 +121,44 @@ Auth types: `bearer`, `oauth`, `basic`, `cookie`, `custom-header`
 
 Run the "Manage Secrets" action (`ManageSecrets.omnijs`) to list, add, edit, or delete services and their credentials interactively.
 
+## URL Resolver Library
+
+An extensible URL-to-title resolver is available at `com.gmail.romansavrulin.url-resolver-library`. Load it:
+
+```js
+const resolver = PlugIn.find("com.gmail.romansavrulin.url-resolver-library").library("url-resolver-library");
+```
+
+### resolve(url) -- get a page/resource title from any URL
+
+```js
+const title = await resolver.resolve("https://github.com/user/repo/issues/42");
+// -> "Fix login bug #42"
+```
+
+Runs a chain of resolvers in order. Built-in resolvers: GitHub (repos, issues, PRs, commits), Jira (issues), YouTube (oEmbed), then HTML fallback (og:title / twitter:title / title tag). Auth is handled transparently via `sm.authenticatedFetch`.
+
+### Resolver Interface
+
+Custom resolvers can be added with `resolver.addResolver(obj)`:
+
+```js
+resolver.addResolver({
+    name: "MyService",
+    matches: function(url) { return /myservice\.com/.test(url); },
+    resolve: async function(url, fetchFn) {
+        // fetchFn = sm.authenticatedFetch (auth injected automatically)
+        // Return string (title), null (fall through), or throw (hard error)
+        const resp = await fetchFn(apiUrl);
+        return JSON.parse(resp.bodyString).title;
+    }
+});
+```
+
+Return contract: non-empty string = success, null = try next resolver, throw = stop with error.
+
+Other methods: `removeResolver(name)`, `listResolvers()`.
+
 ## Security Notes
 
 - Tokens and secrets must always go through `Credentials` (keychain-backed)
