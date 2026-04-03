@@ -18,8 +18,7 @@ OmniFocus OmniAutomation plug-in collection by Roman Savrulin. All `.omnijs` fil
 
 ### Actions (type: action)
 
-- `URL-to-TaskName.omnijs` — renames selected tasks using resolved page/resource titles. Uses `url-resolver-library` for resolution and `st-api-library` for URL extraction. ID: `com.gmail.romansavrulin.url-to-task-name`
-- `URL-to-Comment.omnijs` — moves URLs from task names to notes. Uses `st-api-library.firstURLFromText`. ID: `com.gmail.romansavrulin.url-to-comment`
+- `URL-to-TaskName.omnijs` — smart URL handler: if the task name has a URL alongside other text (a caption), extracts the URL to the note and keeps the caption; otherwise resolves the URL to a page title via `url-resolver-library`. Uses `st-api-library` for URL extraction. ID: `com.gmail.romansavrulin.url-to-task-name`
 - `copyAsURL.omnijs` — copies tasks as formatted HTML links to clipboard. Uses `st-api-library.firstURLFromText`. ID: `com.gmail.romansavrulin.copy-as-url`
 - `ManageSecrets.omnijs` — CRUD UI for secret-manager-library services (list/add/edit/delete credentials). ID: `com.gmail.romansavrulin.manage-secrets`
 - `RestTest.omnijs` — StarTrek API test action. Uses `secret-manager-library.authenticatedFetch`. Ctrl+click shows credential status. ID: `com.gmail.romansavrulin.startrek-get`
@@ -30,7 +29,6 @@ OmniFocus OmniAutomation plug-in collection by Roman Savrulin. All `.omnijs` fil
 ```
 URL-to-TaskName → url-resolver-library → secret-manager-library
                 → st-api-library
-URL-to-Comment  → st-api-library
 copyAsURL       → st-api-library
 RestTest        → secret-manager-library
 ManageSecrets   → secret-manager-library

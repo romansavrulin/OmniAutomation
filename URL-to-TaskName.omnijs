@@ -3,8 +3,8 @@
     "targets": ["omnifocus"],
     "author": "Roman Savrulin",
     "identifier": "com.gmail.romansavrulin.url-to-task-name",
-    "version": "0.1",
-    "description": "Fetches the URL found in the task note (or name) and renames the task using the page title, like a messenger link preview.",
+    "version": "0.2",
+    "description": "Smart URL handler: if the task name has a URL alongside other text, extracts the URL to the note and keeps the caption. If the name is just a URL (or the URL is only in the note), resolves it to a page title.",
     "label": "URL → Task Name",
     "shortLabel": "URL → Name",
     "paletteLabel": "URL → Task Name",
@@ -17,6 +17,24 @@
     const resolver = PlugIn.find("com.gmail.romansavrulin.url-resolver-library").library("url-resolver-library");
     const firstURL = lib.firstURL;
 
+    function extractURLToNote(task) {
+        const fullName = task.name || "Untitled";
+        const firstLine = fullName.split("\n")[0].trim();
+        const url = firstURL(fullName);
+        if (!url) return null;
+
+        const cleanName = firstLine.replace(url, "").trim()
+            .replace(/\s{2,}/g, " ")
+            .replace(/^[,.\s]+|[,.\s]+$/g, "");
+
+        if (!cleanName) return null;
+
+        const existingNote = task.note ? task.note.trim() : "";
+        task.name = cleanName;
+        task.note = existingNote ? `${url}\n${existingNote}` : url;
+        return cleanName;
+    }
+
     const action = new PlugIn.Action(async function (selection, sender) {
         try {
             const tasks = selection.tasks || [];
@@ -25,17 +43,27 @@
                 return;
             }
 
-            const updated = [];
+            const extracted = [];
+            const resolved = [];
             const failed = [];
 
             for (const task of tasks) {
-                // URL lives in note (put there by "URL to Comment"), fall back to task name
+                const urlInName = firstURL(task.name);
+                const nameWithoutURL = urlInName
+                    ? (task.name || "").replace(urlInName, "").trim().replace(/^[,.\s]+|[,.\s]+$/g, "")
+                    : "";
+
+                if (urlInName && nameWithoutURL.length > 0) {
+                    const caption = extractURLToNote(task);
+                    extracted.push(`"${caption}"`);
+                    continue;
+                }
+
                 const urlFromNote = firstURL(task.note);
-                const urlFromName = firstURL(task.name);
-                const url = urlFromNote || urlFromName;
+                const url = urlFromNote || urlInName;
 
                 if (!url) {
-                    failed.push(`"${task.name}" — no URL found in note or name`);
+                    failed.push(`"${task.name}" — no URL found`);
                     continue;
                 }
 
@@ -44,24 +72,24 @@
                     const oldName = task.name;
                     task.name = title;
 
-                    // URL came from the task name — save it to the note so it isn't lost
-                    if (urlFromName && !urlFromNote) {
+                    if (urlInName && !urlFromNote) {
                         const existingNote = task.note ? task.note.trim() : "";
                         task.note = existingNote ? `${url}\n${existingNote}` : url;
                     }
 
-                    updated.push(`"${oldName}" → "${title}"`);
+                    resolved.push(`"${oldName}" → "${title}"`);
                 } catch (err) {
                     failed.push(`"${task.name}" — ${err.name}: ${err.message}`);
                 }
             }
 
             let body = "";
-            if (updated.length > 0) body += `Renamed ${updated.length} task(s):\n- ${updated.join("\n- ")}`;
+            if (extracted.length > 0) body += `URL extracted to note (${extracted.length}):\n- ${extracted.join("\n- ")}`;
+            if (resolved.length > 0) body += `${body ? "\n\n" : ""}Resolved (${resolved.length}):\n- ${resolved.join("\n- ")}`;
             if (failed.length > 0) body += `${body ? "\n\n" : ""}Failed (${failed.length}):\n- ${failed.join("\n- ")}`;
 
             new Alert(
-                updated.length > 0 ? "Done" : "Nothing Renamed",
+                (extracted.length + resolved.length) > 0 ? "Done" : "Nothing Changed",
                 body || "No changes were made."
             ).show();
 
