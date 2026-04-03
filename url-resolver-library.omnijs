@@ -13,6 +13,20 @@
     var lib = new PlugIn.Library(new Version("1.0"));
 
     // -----------------------------------------------------------------------
+    // URL extraction helpers
+    // -----------------------------------------------------------------------
+
+    lib.firstURL = function (text) {
+        if (!text) return null;
+        const m = String(text).match(/\bhttps?:\/\/[^\s<>"']+/i);
+        if (!m) return null;
+        let u = m[0];
+        while (/[),.;:\]]$/.test(u)) u = u.slice(0, -1);
+        return u;
+    };
+    lib.firstURLFromText = lib.firstURL;
+
+    // -----------------------------------------------------------------------
     // Shared HTML helpers (exposed for use by resolver modules)
     // -----------------------------------------------------------------------
 

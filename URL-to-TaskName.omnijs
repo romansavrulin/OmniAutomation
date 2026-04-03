@@ -13,9 +13,8 @@
 (() => {
     "use strict";
 
-    const lib = PlugIn.find("com.gmail.romansavrulin.st-api-library").library("st-api-library");
     const resolver = PlugIn.find("com.gmail.romansavrulin.url-resolver-library").library("url-resolver-library");
-    const firstURL = lib.firstURL;
+    const firstURL = resolver.firstURL;
 
     function extractURLToNote(task) {
         const fullName = task.name || "Untitled";

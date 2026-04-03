@@ -13,8 +13,8 @@
 (() => {
 	"use strict";
 
-	const lib = PlugIn.find("com.gmail.romansavrulin.st-api-library").library("st-api-library");
-	const firstURLFromText = lib.firstURLFromText;
+	const resolver = PlugIn.find("com.gmail.romansavrulin.url-resolver-library").library("url-resolver-library");
+	const firstURLFromText = resolver.firstURLFromText;
 
 	function escapeHTML(s) {
 		return String(s)
